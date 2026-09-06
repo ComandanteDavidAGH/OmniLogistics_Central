@@ -4,16 +4,29 @@ import time
 import re
 import plotly.express as px
 
-# --- CONFIGURACIÓN CORPORATIVA ---
-st.set_page_config(page_title="OmniLogistics OS | Demo", page_icon="🌐", layout="wide")
+# --- CONFIGURACIÓN CORPORATIVA (Bloqueo de menú nativo) ---
+st.set_page_config(
+    page_title="OmniLogistics OS | Demo", 
+    page_icon="🌐", 
+    layout="wide",
+    initial_sidebar_state="expanded",
+    menu_items={
+        'Get Help': None,
+        'Report a bug': None,
+        'About': None
+    }
+)
 
 st.markdown("""
 <style>
-    /* BLINDAJE SELECTIVO: Ocultar GitHub y Compartir, pero MANTENER el menú de Hamburguesa */
-    [data-testid="stToolbar"] {display: none !important;}
-    [data-testid="stHeaderToolbar"] {display: none !important;}
-    [data-testid="stActionElements"] {display: none !important;}
-    .stDeployButton {display: none !important;}
+    /* BLINDAJE: Ocultar los botones superiores pero mantener la barra lateral (hamburguesa) intacta */
+    .stApp > header {
+        background-color: transparent;
+    }
+    .stApp > header > div:first-child {
+        display: none;
+    }
+    
     footer {visibility: hidden;}
     
     /* DISEÑO CORPORATIVO Y KPI */
