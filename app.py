@@ -9,6 +9,13 @@ st.set_page_config(page_title="OmniLogistics OS | Demo", page_icon="🌐", layou
 
 st.markdown("""
 <style>
+    /* BLINDAJE DE CÓDIGO: Ocultar menú nativo, pie de página e ícono de GitHub */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    [data-testid="stHeader"] {display: none !important;}
+    [data-testid="stToolbar"] {display: none !important;}
+    
     .main { background-color: #0e1117; }
     .titulo-principal { color: #ffffff; font-family: 'Arial Black', sans-serif; font-size: 26px; border-bottom: 3px solid #d4af37; padding-bottom: 10px; margin-bottom: 20px; text-transform: uppercase; }
     
