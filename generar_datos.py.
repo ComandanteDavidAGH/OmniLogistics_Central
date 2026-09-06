@@ -1,0 +1,47 @@
+import pandas as pd
+import random
+from datetime import datetime, timedelta
+
+# Configuración de variables
+ciudades = ['Bogotá', 'Medellín', 'Cali', 'Barranquilla', 'Cartagena', 'Bucaramanga']
+transportistas = ['Logística Express', 'Carga Segura SAS', 'Rutas de Colombia', 'Transportes del Norte']
+estatus_lista = ['Entregado', 'Entregado', 'Entregado', 'En Ruta', 'Retrasado'] # Más peso a "Entregado"
+
+datos = []
+fecha_base = datetime(2026, 1, 1)
+
+# Generar 1500 filas de datos
+for i in range(1, 1501):
+    origen = random.choice(ciudades)
+    destino = random.choice([c for c in ciudades if c != origen])
+    fecha_salida = fecha_base + timedelta(days=random.randint(0, 240))
+    transportista = random.choice(transportistas)
+    estatus = random.choice(estatus_lista)
+    
+    # Simular costos
+    costo_base = random.randint(500000, 2500000)
+    costo_real = costo_base if estatus != 'Retrasado' else costo_base + random.randint(100000, 500000)
+    
+    # Simular retrasos
+    retraso = random.randint(1, 5) if estatus == 'Retrasado' else 0
+
+    datos.append([
+        f"GD-{10000+i}", 
+        fecha_salida.strftime("%Y-%m-%d"), 
+        origen, 
+        destino, 
+        transportista, 
+        costo_base, 
+        costo_real, 
+        estatus, 
+        retraso
+    ])
+
+# Crear el archivo CSV
+df = pd.DataFrame(datos, columns=[
+    'ID_Despacho', 'Fecha_Salida', 'Origen', 'Destino', 
+    'Transportista', 'Costo_Proyectado', 'Costo_Real', 'Estatus', 'Dias_Retraso'
+])
+
+df.to_csv('datos_logistica_demo.csv', index=False)
+print("¡Éxito! Archivo 'datos_logistica_demo.csv' creado con 1500 filas.")
