@@ -19,15 +19,18 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    /* FRANCOTIRADOR: Ocultar enlace de GitHub y botón de Deploy, salvando el menú */
-    header a { display: none !important; }
-    [data-testid="stDeployButton"] { display: none !important; }
-    .viewerBadge_container__1QSob { display: none !important; }
-    
-    /* Limpieza visual de cabecera y pie de página */
-    header { background-color: transparent !important; }
-    footer { visibility: hidden !important; }
-    
+    /* 🎯 CIRUGÍA DE PRECISIÓN: Neutralizar Gato y mantener Hamburguesa */
+    [data-testid="stToolbarActions"], .stAppDeployButton, .viewerBadge_container, div[class^="viewerBadge"], footer { 
+        display: none !important; 
+    }
+    #MainMenu { 
+        visibility: visible !important; 
+        display: block !important; 
+    }
+    header { 
+        background-color: transparent !important; 
+    }
+
     /* DISEÑO CORPORATIVO Y KPI */
     .main { background-color: #0e1117; }
     .titulo-principal { color: #ffffff; font-family: 'Arial Black', sans-serif; font-size: 26px; border-bottom: 3px solid #d4af37; padding-bottom: 10px; margin-bottom: 20px; text-transform: uppercase; }
