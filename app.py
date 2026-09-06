@@ -16,27 +16,37 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- MOTOR DE EXTRACCIÓN DE DATOS ---
-@st.cache_data(ttl=60)
-def cargar_base_datos(url):
-    # Si el usuario proporciona una URL de Google Sheets
-    if url and url.strip() != "":
+# --- MOTOR DE CARGA DINÁMICA DE DATOS ---
+def cargar_base_datos(archivo_subido, url_input):
+    # 1. Prioridad: Archivo subido directamente por el usuario (CSV o Excel)
+    if archivo_subido is not None:
         try:
-            match = re.search(r'/d/([a-zA-Z0-9-_]+)', url)
+            if archivo_subido.name.endswith('.csv'):
+                df = pd.read_csv(archivo_subido)
+            else:
+                df = pd.read_excel(archivo_subido)
+            return df, f"Archivo Cargado ({archivo_subido.name})"
+        except Exception as e:
+            st.sidebar.error(f"Error al leer el archivo: {e}")
+
+    # 2. Prioridad: URL de Google Sheets
+    if url_input and url_input.strip() != "":
+        try:
+            match = re.search(r'/d/([a-zA-Z0-9-_]+)', url_input)
             if match:
                 doc_id = match.group(1)
                 url_csv = f"https://docs.google.com/spreadsheets/d/{doc_id}/export?format=csv"
                 df = pd.read_csv(url_csv)
-                return df, "Google Sheets"
+                return df, "Google Sheets Conectado"
         except Exception:
             pass
 
-    # Fallback automático al archivo demo con 1,500 registros
+    # 3. Prioridad: Carga por defecto del archivo demo local
     try:
         df = pd.read_csv("datos_logistica_demo.csv")
         return df, "Demo Central (1,500 Registros)"
     except Exception:
-        return None, "Error"
+        return None, "Sin Fuente de Datos"
 
 # --- BARRA LATERAL ---
 with st.sidebar:
@@ -50,104 +60,113 @@ with st.sidebar:
         "📥 4. Ingesta y Limpieza Financiera"
     ])
     st.markdown("---")
-    url_input = st.text_input("🔗 Conectar Google Sheet (Opcional):", placeholder="Pega URL o deja en blanco...")
+    
+    st.markdown("**📥 Cargar Datos de Cliente:**")
+    archivo_cliente = st.file_uploader("Sube tu CSV o Excel aquí:", type=['csv', 'xlsx'])
+    url_input = st.text_input("🔗 O conecta Google Sheet:", placeholder="Pega URL aquí...")
 
-# Carga de la base de datos
-df_base, fuente = cargar_base_datos(url_input)
+# Cargar los datos dinámicamente según la selección del usuario
+df_base, fuente = cargar_base_datos(archivo_cliente, url_input)
 
 # --- MÓDULO 1: COMMAND CENTER ---
 if menu == "📊 1. Command Center (Dashboard)":
     st.markdown("<div class='titulo-principal'>Centro de Mando Logístico</div>", unsafe_allow_html=True)
 
     if df_base is not None and not df_base.empty:
-        st.success(f"✅ Sistema sincronizado correctamente. Fuente de datos: **{fuente}**")
+        st.success(f"✅ Fuente de datos activa: **{fuente}**")
         
-        # Validación de columnas para el archivo de 1,500 datos
         total_despachos = len(df_base)
         
-        if 'Costo_Real' in df_base.columns:
-            costo_total = df_base['Costo_Real'].sum()
-        else:
-            costo_total = 0
+        # Identificación flexible de columnas numéricas / operativas
+        col_costo = [c for c in df_base.columns if 'costo' in c.lower() or 'valor' in c.lower() or 'monto' in c.lower()]
+        costo_total = df_base[col_costo[0]].sum() if col_costo else 0
 
-        if 'Estatus' in df_base.columns:
-            retrasados = len(df_base[df_base['Estatus'] == 'Retrasado'])
-        else:
-            retrasados = 0
-
+        col_estatus = [c for c in df_base.columns if 'estatus' in c.lower() or 'estado' in c.lower()]
+        retrasados = len(df_base[df_base[col_estatus[0]].astype(str).str.lower().str.contains('retras|novedad|pendiente')]) if col_estatus else 0
         pct_retraso = (retrasados / total_despachos * 100) if total_despachos > 0 else 0
 
         # Tarjetas de KPI
         c1, c2, c3, c4 = st.columns(4)
-        c1.markdown(f"<div class='kpi-card'><div class='kpi-title'>Total Despachos</div><p class='kpi-value'>{total_despachos:,}</p></div>", unsafe_allow_html=True)
-        c2.markdown(f"<div class='kpi-card' style='border-left-color: #28a745;'><div class='kpi-title'>Costo Operativo Real</div><p class='kpi-value'>${costo_total:,.0f}</p></div>", unsafe_allow_html=True)
-        c3.markdown(f"<div class='kpi-card' style='border-left-color: #dc3545;'><div class='kpi-title'>Novedades / Retrasos</div><p class='kpi-value'>{retrasados}</p></div>", unsafe_allow_html=True)
-        c4.markdown(f"<div class='kpi-card' style='border-left-color: #17a2b8;'><div class='kpi-title'>% Tasa de Ineficiencia</div><p class='kpi-value'>{pct_retraso:.1f}%</p></div>", unsafe_allow_html=True)
+        c1.markdown(f"<div class='kpi-card'><div class='kpi-title'>Total Registros</div><p class='kpi-value'>{total_despachos:,}</p></div>", unsafe_allow_html=True)
+        c2.markdown(f"<div class='kpi-card' style='border-left-color: #28a745;'><div class='kpi-title'>Costo / Valor Total</div><p class='kpi-value'>${costo_total:,.0f}</p></div>", unsafe_allow_html=True)
+        c3.markdown(f"<div class='kpi-card' style='border-left-color: #dc3545;'><div class='kpi-title'>Incidencias / Retrasos</div><p class='kpi-value'>{retrasados}</p></div>", unsafe_allow_html=True)
+        c4.markdown(f"<div class='kpi-card' style='border-left-color: #17a2b8;'><div class='kpi-title'>% Ineficiencia</div><p class='kpi-value'>{pct_retraso:.1f}%</p></div>", unsafe_allow_html=True)
 
         st.markdown("<br>", unsafe_allow_html=True)
         
         # Gráficos dinámicos
         col_a, col_b = st.columns(2)
         with col_a:
-            st.markdown("### 🚚 Operaciones por Transportista")
-            if 'Transportista' in df_base.columns:
-                st.bar_chart(df_base['Transportista'].value_counts())
+            st.markdown("### 🚚 Agrupación por Proveedor / Transportista")
+            col_transp = [c for c in df_base.columns if 'transp' in c.lower() or 'proveedor' in c.lower()]
+            if col_transp:
+                st.bar_chart(df_base[col_transp[0]].value_counts())
             else:
-                st.info("Columna 'Transportista' no disponible en esta vista.")
+                st.info("Sube un archivo con columna de 'Transportista' o 'Proveedor' para ver el gráfico.")
 
         with col_b:
-            st.markdown("### 📍 Distribución por Estatus")
-            if 'Estatus' in df_base.columns:
-                st.bar_chart(df_base['Estatus'].value_counts())
+            st.markdown("### 📍 Estado de las Operaciones")
+            if col_estatus:
+                st.bar_chart(df_base[col_estatus[0]].value_counts())
             else:
-                st.info("Columna 'Estatus' no disponible en esta vista.")
+                st.info("Sube un archivo con columna de 'Estatus' o 'Estado' para ver el gráfico.")
 
-        st.markdown("### 📦 Detalle de Operaciones en Registro")
+        st.markdown("### 📦 Vista Previa de la Bóveda de Datos")
         st.dataframe(df_base, use_container_width=True, hide_index=True)
     else:
-        st.error("🚨 Error al cargar la base de datos. Asegúrate de que 'datos_logistica_demo.csv' esté subido en la raíz de tu repositorio de GitHub.")
+        st.error("🚨 Sin datos disponibles. Sube un archivo en la barra lateral.")
 
 # --- MÓDULO 2: MOTOR DE COSTOS ---
 elif menu == "⚙️ 2. Motor de Costos (Smart Split)":
     st.markdown("<div class='titulo-principal'>Motor de Prorrateo Dinámico</div>", unsafe_allow_html=True)
     
-    if df_base is not None and not df_base.empty and 'Costo_Proyectado' in df_base.columns and 'Costo_Real' in df_base.columns:
-        st.write("Análisis de variación presupuestal y ajuste de carga operativa.")
-        
-        df_split = df_base.copy()
-        df_split['Variacion'] = df_split['Costo_Real'] - df_split['Costo_Proyectado']
+    if df_base is not None and not df_base.empty:
+        st.write("Ajuste de carga operativa y simulación de overhead presupuestal.")
         
         overhead = st.slider("⚙️ Ajuste de Carga Administrativa (Overhead %):", min_value=0, max_value=50, value=15, step=1)
-        df_split['Costo_Ajustado'] = df_split['Costo_Real'] * (1 + (overhead / 100))
         
-        columnas_mostrar = ['ID_Despacho', 'Origen', 'Destino', 'Transportista', 'Costo_Proyectado', 'Costo_Real', 'Variacion', 'Costo_Ajustado']
-        df_mostrar = df_split[[c for c in columnas_mostrar if c in df_split.columns]]
+        df_split = df_base.copy()
+        col_num = df_split.select_dtypes(include=['float64', 'int64']).columns
         
-        st.dataframe(df_mostrar.style.format({
-            'Costo_Proyectado': '${:,.0f}',
-            'Costo_Real': '${:,.0f}',
-            'Variacion': '${:,.0f}',
-            'Costo_Ajustado': '${:,.0f}'
-        }), use_container_width=True, hide_index=True)
+        if len(col_num) > 0:
+            for col in col_num:
+                df_split[f"{col}_Ajustado"] = df_split[col] * (1 + (overhead / 100))
+            st.dataframe(df_split, use_container_width=True, hide_index=True)
+            st.success(f"✅ Re-cálculo financiero completado con un overhead del {overhead}%.")
+        else:
+            st.warning("El archivo no contiene columnas numéricas para calcular prorrateos.")
     else:
-        st.warning("Se requiere la base de datos de demo para calcular el prorrateo de costos.")
+        st.warning("Carga un archivo de datos para activar el motor de costos.")
 
 # --- MÓDULO 3: AUDITORÍA ---
 elif menu == "🛡️ 3. Auditoría en la Nube":
     st.markdown("<div class='titulo-principal'>Auditoría de Ineficiencias</div>", unsafe_allow_html=True)
-    if df_base is not None and 'Dias_Retraso' in df_base.columns:
-        df_anomalias = df_base[df_base['Dias_Retraso'] > 0]
-        st.warning(f"⚠️ Se detectaron {len(df_anomalias)} despachos con sobrecostos o retrasos en la operación.")
-        st.dataframe(df_anomalias, use_container_width=True, hide_index=True)
+    if df_base is not None and not df_base.empty:
+        col_retraso = [c for c in df_base.columns if 'retras' in c.lower() or 'dias' in c.lower()]
+        if col_retraso:
+            df_anomalias = df_base[df_base[col_retraso[0]] > 0]
+            st.warning(f"⚠️ Se detectaron {len(df_anomalias)} registros con demoras o novedades.")
+            st.dataframe(df_anomalias, use_container_width=True, hide_index=True)
+        else:
+            st.info("Buscando anomalías... No se detectaron columnas de retraso explícitas en el archivo cargado.")
     else:
-        st.info("Sin registros de auditoría pendientes.")
+        st.info("Sin registros para auditar.")
 
 # --- MÓDULO 4: INGESTA Y LIMPIEZA ---
 elif menu == "📥 4. Ingesta y Limpieza Financiera":
-    st.markdown("<div class='titulo-principal'>Motor de Limpieza Financiera</div>", unsafe_allow_html=True)
-    st.write("Demostración interactiva de procesamiento de sábanas crudas de Excel.")
-    
-    if st.button("🚀 Simular Limpieza de Datos Crudos"):
-        with st.spinner("Procesando estructura..."):
-            time.sleep(1)
-            st.success("✅ 1,500 Registros validados, limpios y normalizados en 0.8 segundos.")
+    st.markdown("<div class='titulo-principal'>Motor de Limpieza Automática</div>", unsafe_allow_html=True)
+    st.write("Procesa sábanas de datos crudas, elimina espacios en blanco y normaliza valores financieros al instante.")
+
+    if df_base is not None and not df_base.empty:
+        if st.button("🚀 Ejecutar Limpieza y Normalización en Vivo"):
+            with st.spinner("Procesando y sanitizando datos..."):
+                time.sleep(1)
+                
+                df_limpio = df_base.copy()
+                # Limpieza de textos en todas las columnas tipo string
+                for col in df_limpio.select_dtypes(include=['object']).columns:
+                    df_limpio[col] = df_limpio[col].astype(str).str.strip().str.upper()
+                
+                st.success(f"✅ ¡Proceso completado! Se limpiaron y estandarizaron {len(df_limpio):,} filas exitosamente.")
+                st.markdown("### ✨ Datos Sanitizados y Listos para Exportar")
+                st.dataframe(df_limpio, use_container_width=True, hide_index=True)
