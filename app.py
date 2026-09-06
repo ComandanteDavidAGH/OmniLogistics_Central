@@ -19,15 +19,14 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    /* BLINDAJE: Ocultar los botones superiores pero mantener la barra lateral (hamburguesa) intacta */
-    .stApp > header {
-        background-color: transparent;
-    }
-    .stApp > header > div:first-child {
-        display: none;
-    }
+    /* FRANCOTIRADOR: Ocultar enlace de GitHub y botón de Deploy, salvando el menú */
+    header a { display: none !important; }
+    [data-testid="stDeployButton"] { display: none !important; }
+    .viewerBadge_container__1QSob { display: none !important; }
     
-    footer {visibility: hidden;}
+    /* Limpieza visual de cabecera y pie de página */
+    header { background-color: transparent !important; }
+    footer { visibility: hidden !important; }
     
     /* DISEÑO CORPORATIVO Y KPI */
     .main { background-color: #0e1117; }
