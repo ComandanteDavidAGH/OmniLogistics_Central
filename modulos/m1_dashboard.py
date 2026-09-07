@@ -19,35 +19,34 @@ def ejecutar(df_base, fuente_activa):
         st.error("🚨 Sin datos disponibles. Sube tus archivos en la barra lateral.")
         return
 
-    st.success(f"✅ Procesamiento Ultra-Rápido: Origen **{fuente_activa}**")
+    st.success(f"✅ Procesamiento Turbo Activado: Origen **{fuente_activa}**")
     
     st.markdown("**⚙️ Configuración Dinámica de Gráficos (Mapeo en vivo)**")
     
-    # Detección inteligente ampliada
     col_costo_auto = [c for c in df_base.columns if any(p in c.lower() for p in ['costo', 'valor', 'monto', 'precio', 'fob', 'cif', 'total', 'usd'])]
     col_estatus_auto = [c for c in df_base.columns if any(p in c.lower() for p in ['estatus', 'estado', 'status', 'novedad', 'alerta', 'condicion', 'retraso', 'etapa'])]
     col_cat_auto = [c for c in df_base.columns if any(p in c.lower() for p in ['transp', 'proveedor', 'categoria', 'bodega', 'origen', 'destino', 'modo', 'tipo', 'via', 'puerto'])]
     col_fecha_auto = [c for c in df_base.columns if any(p in c.lower() for p in ['fecha', 'date', 'mes', 'año', 'year', 'periodo', 'creacion'])]
 
-    # 4 Selectores para control total
     c_cfg1, c_cfg2, c_cfg3, c_cfg4 = st.columns(4)
     
     col_cat = c_cfg1.selectbox("📊 Categoría (Eje X/Color):", df_base.columns, index=df_base.columns.get_loc(col_cat_auto[0]) if col_cat_auto else 0)
     col_costo = c_cfg2.selectbox("💰 Métrica (Dinero):", df_base.columns, index=df_base.columns.get_loc(col_costo_auto[0]) if col_costo_auto else 0)
     col_estatus = c_cfg3.selectbox("🚦 Estatus (Semáforo):", df_base.columns, index=df_base.columns.get_loc(col_estatus_auto[0]) if col_estatus_auto else 0)
-    col_fecha = c_cfg4.selectbox("📅 Eje Temporal (Tendencia):", df_base.columns, index=df_base.columns.get_loc(col_fecha_auto[0]) if col_fecha_auto else 0)
+    col_fecha = c_cfg4.selectbox("📅 Eje Temporal:", df_base.columns, index=df_base.columns.get_loc(col_fecha_auto[0]) if col_fecha_auto else 0)
 
+    # --- MOTOR TURBO: SANITIZACIÓN RÁPIDA DE TIPOS ---
     total_filas = len(df_base)
+    df_base['__Métrica_Limpia'] = pd.to_numeric(df_base[col_costo].astype(str).str.replace(r'[^\d.-]', '', regex=True), errors='coerce').fillna(0)
+    df_base['__Cat_Limpia'] = df_base[col_cat].astype(str).fillna("N/A")
+    df_base['__Estatus_Limpio'] = df_base[col_estatus].astype(str).fillna("N/A")
+    df_base['__Fecha_Limpia'] = df_base[col_fecha].astype(str).fillna("N/A")
     
-    df_base['Costo_Limpio'] = pd.to_numeric(df_base[col_costo].astype(str).str.replace(r'[^\d.]', '', regex=True), errors='coerce').fillna(0)
-    costo_total = df_base['Costo_Limpio'].sum()
-    
-    df_base[col_estatus] = df_base[col_estatus].astype(str)
-    novedades = len(df_base[df_base[col_estatus].str.lower().str.contains('retras|novedad|pendiente|quiebre|sobre|error|falla', na=False)])
-        
+    costo_total = df_base['__Métrica_Limpia'].sum()
+    novedades = len(df_base[df_base['__Estatus_Limpio'].str.lower().str.contains('retras|novedad|pendiente|quiebre|sobre|error|falla', na=False)])
     pct_novedad = (novedades / total_filas * 100) if total_filas > 0 else 0
 
-    # TARJETAS DE KPI
+    # --- TARJETAS DE KPI ---
     c1, c2, c3, c4 = st.columns(4)
     c1.markdown(f"<div class='kpi-container'><div class='kpi-title'>Volumen de Registros</div><p class='kpi-value-single'>{total_filas:,}</p></div>", unsafe_allow_html=True)
     c2.markdown(f"<div class='kpi-container' style='border-left-color: #28a745;'><div class='kpi-title'>Capital Comprometido</div><p class='kpi-value-single'>${costo_total:,.0f}<span class='kpi-currency'>COP/USD</span></p></div>", unsafe_allow_html=True)
@@ -60,41 +59,47 @@ def ejecutar(df_base, fuente_activa):
     col_a, col_b = st.columns(2)
     
     with col_a:
-        st.markdown(f"### 📊 Distribución por {col_cat}")
-        df_agrupado = df_base.groupby(col_cat)['Costo_Limpio'].sum().reset_index()
-        fig1 = px.bar(df_agrupado, x=col_cat, y='Costo_Limpio', text_auto='.2s', color='Costo_Limpio', color_continuous_scale='Blues')
-        fig1.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font=dict(color="white"))
+        st.markdown(f"### 📊 Top 15 por {col_cat}")
+        # Agrupación y límite de las 15 mejores categorías para no congelar la pantalla
+        df_agrupado = df_base.groupby('__Cat_Limpia')['__Métrica_Limpia'].sum().reset_index()
+        df_agrupado = df_agrupado.sort_values('__Métrica_Limpia', ascending=False).head(15)
+        
+        fig1 = px.bar(df_agrupado, x='__Cat_Limpia', y='__Métrica_Limpia', text_auto='.2s', color='__Métrica_Limpia', color_continuous_scale='Blues')
+        fig1.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font=dict(color="white"), xaxis_title=col_cat, yaxis_title="Monto")
         st.plotly_chart(fig1, use_container_width=True)
 
     with col_b:
-        st.markdown(f"### 🎯 Semáforo Operativo ({col_estatus})")
-        df_pie = df_base[col_estatus].value_counts().reset_index().head(10)
-        df_pie.columns = [col_estatus, 'Conteo']
-        fig2 = px.pie(df_pie, names=col_estatus, values='Conteo', hole=0.4, color_discrete_sequence=px.colors.qualitative.Set1)
+        st.markdown(f"### 🎯 Estatus Operativo ({col_estatus})")
+        df_pie = df_base['__Estatus_Limpio'].value_counts().reset_index().head(10)
+        df_pie.columns = ['__Estatus_Limpio', 'Conteo']
+        fig2 = px.pie(df_pie, names='__Estatus_Limpio', values='Conteo', hole=0.4, color_discrete_sequence=px.colors.qualitative.Set1)
         fig2.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font=dict(color="white"))
         st.plotly_chart(fig2, use_container_width=True)
 
-    # --- FILA 2: TENDENCIA TEMPORAL (EL GRÁFICO IMPONENTE) ---
+    # --- FILA 2: TENDENCIA TEMPORAL MULTILÍNEA ---
     st.markdown("---")
-    st.markdown(f"### 📈 Evolución en el Tiempo ({col_costo} a lo largo de {col_fecha})")
+    st.markdown(f"### 📈 Evolución Temporal ({col_costo} x {col_fecha})")
     
-    # Agrupamos por Fecha Y por Categoría para generar múltiples líneas como en la imagen
-    df_tendencia = df_base.groupby([col_fecha, col_cat])['Costo_Limpio'].sum().reset_index()
-    # Ordenamos por fecha para que la línea fluya correctamente de izquierda a derecha
-    df_tendencia = df_tendencia.sort_values(by=col_fecha)
+    # Agrupamos por Fecha y Categoría, y filtramos solo el Top 10 de categorías para líneas más limpias
+    top_categorias = df_agrupado['__Cat_Limpia'].head(10).tolist()
+    df_tendencia_base = df_base[df_base['__Cat_Limpia'].isin(top_categorias)]
     
-    # Generamos el gráfico de líneas. El color divide la data en múltiples líneas
-    fig3 = px.line(df_tendencia, x=col_fecha, y='Costo_Limpio', color=col_cat, markers=True)
+    df_tendencia = df_tendencia_base.groupby(['__Fecha_Limpia', '__Cat_Limpia'])['__Métrica_Limpia'].sum().reset_index()
+    # Forzar la ordenación de las fechas para evitar puntos sueltos o líneas en zigzag
+    df_tendencia = df_tendencia.sort_values(by='__Fecha_Limpia')
+    
+    fig3 = px.line(df_tendencia, x='__Fecha_Limpia', y='__Métrica_Limpia', color='__Cat_Limpia', markers=True)
+    fig3.update_traces(line=dict(width=3)) # Líneas más gruesas e imponentes
     fig3.update_layout(
         plot_bgcolor="rgba(0,0,0,0)", 
         paper_bgcolor="rgba(0,0,0,0)", 
         font=dict(color="white"),
         xaxis_title=col_fecha,
-        yaxis_title="Capital",
+        yaxis_title=col_costo,
         legend_title=col_cat
     )
     st.plotly_chart(fig3, use_container_width=True)
 
     st.markdown("---")
     st.markdown("### 🗄️ Bóveda de Datos Conciliada")
-    st.dataframe(df_base, use_container_width=True, hide_index=True)
+    st.dataframe(df_base.drop(columns=['__Métrica_Limpia', '__Cat_Limpia', '__Estatus_Limpio', '__Fecha_Limpia']), use_container_width=True, hide_index=True)
