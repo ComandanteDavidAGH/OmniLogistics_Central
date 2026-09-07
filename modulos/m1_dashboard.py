@@ -3,33 +3,38 @@ import pandas as pd
 import plotly.express as px
 
 def ejecutar(df_base, fuente_activa):
-    # 💥 INYECCIÓN CSS: "EL CEBO" DE ALTO CONTRASTE
+    # 💥 INYECCIÓN CSS: DISEÑO EJECUTIVO GÉNESIS (CORREGIDO)
     st.markdown("""
     <style>
-        /* Títulos y Jerarquía (Intactos) */
+        /* Títulos y Jerarquía */
         .titulo-principal { color: #0d1b2a; font-family: 'Arial Black', sans-serif; font-size: 32px; border-bottom: 4px solid #d4af37; padding-bottom: 10px; margin-bottom: 25px; text-transform: uppercase; }
         .subtitulo-estrategico { color: #0d1b2a; font-size: 20px; font-weight: 900; border-bottom: 2px solid #d4af37; padding-bottom: 5px; margin-top: 15px; margin-bottom: 15px; text-transform: uppercase; }
         
-        /* 🎣 CEBO 1: Contenedor General (ROJO) */
-        div[data-testid="stSelectbox"] {
-            border: 4px solid red !important;
-            background-color: #ffe6e6 !important;
-            padding: 5px !important;
-            border-radius: 8px !important;
+        /* 1. Endurecimiento de Textos (Etiquetas) */
+        div[data-testid="stSelectbox"] label p {
+            font-weight: 900 !important;
+            color: #0d1b2a !important;
+            text-transform: uppercase !important;
+            font-size: 13px !important;
+            letter-spacing: 0.5px !important;
         }
 
-        /* 🎣 CEBO 2: La caja de selección interactiva (VERDE) */
-        div[data-testid="stSelectbox"] div[data-baseweb="select"] {
-            border: 4px solid #00ff00 !important;
-            background-color: #e6ffe6 !important;
+        /* 2. Endurecimiento de la Caja Interactiva (El Dropdown) */
+        div[data-testid="stSelectbox"] > div > div {
+            border: 2.5px solid #0d1b2a !important;
+            border-radius: 6px !important;
+            background-color: #ffffff !important;
+            box-shadow: 0px 3px 6px rgba(0,0,0,0.08) !important;
+            transition: all 0.2s ease-in-out;
         }
         
-        /* 🎣 CEBO 3: El texto interior (AZUL PUNTEADO) */
-        div[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
-            border: 3px dashed blue !important;
+        /* Efecto al pasar el mouse por los selectores */
+        div[data-testid="stSelectbox"] > div > div:hover {
+            border-color: #d4af37 !important;
+            box-shadow: 0px 4px 8px rgba(0,0,0,0.15) !important;
         }
 
-        /* Tarjetas KPI (Intactas) */
+        /* Tarjetas KPI */
         .kpi-container { display: flex; flex-direction: column; justify-content: center; background-color: #0d1b2a; border-left: 5px solid #d4af37; padding: 15px 18px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); min-height: 95px; }
         .kpi-title { color: #d4af37; font-size: 11px; text-transform: uppercase; font-weight: 800; margin-bottom: 6px; letter-spacing: 0.5px; }
         .kpi-value-single { color: #ffffff; font-size: 22px; font-weight: 900; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
