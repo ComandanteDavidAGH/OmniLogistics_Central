@@ -37,28 +37,32 @@ def ejecutar(df_base, fuente_activa):
     col_estatus = c_cfg3.selectbox("🚦 Estatus (Semáforo):", opciones_columnas, index=(df_base.columns.get_loc(col_estatus_auto[0]) + 1) if col_estatus_auto else 0)
     col_fecha = c_cfg4.selectbox("📅 Eje Temporal:", opciones_columnas, index=(df_base.columns.get_loc(col_fecha_auto[0]) + 1) if col_fecha_auto else 0)
 
-    # --- MOTOR DE FILTRADO POR RANGO DE FECHAS ---
+    # --- MOTOR DE FILTRADO TEMPORAL (DISEÑO EJECUTIVO GÉNESIS) ---
     df_filtrado = df_base.copy()
     
     if col_fecha != "--- No Aplica ---":
-        # Convertimos la columna a formato fecha real para poder compararla matemáticamente
         df_filtrado['__Fecha_Filtro'] = pd.to_datetime(df_filtrado[col_fecha], errors='coerce')
         fechas_validas = df_filtrado['__Fecha_Filtro'].dropna()
         
         if not fechas_validas.empty:
-            min_date = fechas_validas.min().date()
-            max_date = fechas_validas.max().date()
+            # Extraemos las fechas únicas y las ordenamos
+            fechas_unicas = sorted(fechas_validas.dt.date.unique())
+            opciones_fechas = [f.strftime('%Y-%m-%d') for f in fechas_unicas]
             
             st.markdown("---")
-            st.markdown("**🗓️ Filtro de Rango Temporal**")
-            # Selector de rango dual (Inicio y Fin)
-            rango_fechas = st.date_input("Selecciona el periodo a analizar:", [min_date, max_date], min_value=min_date, max_value=max_date)
+            st.markdown("### 🗓️ Lupa Temporal (Rango de Evaluación)")
+            col_t1, col_t2 = st.columns(2)
             
-            if len(rango_fechas) == 2:
-                fecha_inicio, fecha_fin = rango_fechas
-                # Aplicamos el filtro como un bisturí antes de hacer cualquier cálculo
-                mask = (df_filtrado['__Fecha_Filtro'].dt.date >= fecha_inicio) & (df_filtrado['__Fecha_Filtro'].dt.date <= fecha_fin)
-                df_filtrado = df_filtrado.loc[mask]
+            # Selectores estructurales reemplazando al calendario genérico
+            val_ini = col_t1.selectbox("⏳ FECHA BASE (Inicio del Periodo):", opciones_fechas, index=0)
+            val_fin = col_t2.selectbox("⏳ FECHA DE CORTE (Fin del Periodo):", opciones_fechas, index=len(opciones_fechas)-1)
+            
+            fecha_inicio = pd.to_datetime(val_ini).date()
+            fecha_fin = pd.to_datetime(val_fin).date()
+            
+            # Aplicar filtro de precisión
+            mask = (df_filtrado['__Fecha_Filtro'].dt.date >= fecha_inicio) & (df_filtrado['__Fecha_Filtro'].dt.date <= fecha_fin)
+            df_filtrado = df_filtrado.loc[mask]
 
     # --- MOTOR TURBO: SANITIZACIÓN RÁPIDA DE TIPOS CON FILTRO "NO APLICA" ---
     total_filas = len(df_filtrado)
