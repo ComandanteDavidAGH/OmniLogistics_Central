@@ -245,17 +245,78 @@ elif menu == "⚙️ 2. Motor de Costos (Smart Split)":
             st.success(f"✅ Prorrateo recalculado sobre base activa con factor overhead del {overhead}%.")
 
 elif menu == "🛡️ 3. Auditoría en la Nube":
-    st.markdown("<div class='titulo-principal'>Auditoría de Ineficiencias</div>", unsafe_allow_html=True)
-    st.info("Sistema de escaneo de desviaciones activado.")
+    st.markdown("<div class='titulo-principal'>Auditoría de Calidad y Desviaciones</div>", unsafe_allow_html=True)
+    if not df_base.empty:
+        st.info("🔍 Escaneando la matriz en busca de ineficiencias ocultas, errores de tipeo y duplicados...")
+        
+        # 1. Búsqueda de Duplicados
+        duplicados = df_base[df_base.duplicated(keep=False)]
+        
+        # 2. Análisis de Texto (Espacios, Casos Mixtos)
+        cols_texto = df_base.select_dtypes(include=['object']).columns
+        lista_espacios = []
+        lista_casos = []
+        
+        for col in cols_texto:
+            # Detectar espacios al inicio o final
+            mask_espacios = df_base[col].astype(str).str.contains(r'^\s+|\s+$', regex=True, na=False)
+            if mask_espacios.any():
+                temp_df = df_base[mask_espacios].copy()
+                temp_df['Problema_Detectado'] = f"Espacios fantasma en columna: {col}"
+                lista_espacios.append(temp_df)
+                
+            # Detectar inconsistencias de mayúsculas/minúsculas (CamelCase o mixto)
+            mask_casos = df_base[col].astype(str).apply(lambda x: not (str(x).isupper() or str(x).islower() or str(x).istitle()) if pd.notna(x) and str(x).strip() != "" else False)
+            if mask_casos.any():
+                temp_df2 = df_base[mask_casos].copy()
+                temp_df2['Problema_Detectado'] = f"Formato inconsistente (Mayús/Minús) en: {col}"
+                lista_casos.append(temp_df2)
+
+        df_espacios = pd.concat(lista_espacios) if lista_espacios else pd.DataFrame()
+        df_casos = pd.concat(lista_casos) if lista_casos else pd.DataFrame()
+
+        t1, t2, t3 = st.tabs([f"👯 Duplicados Exactos ({len(duplicados)})", f"👻 Espacios Ocultos ({len(df_espacios)})", f"🔤 Formato Inconsistente ({len(df_casos)})"])
+        
+        with t1:
+            if not duplicados.empty:
+                st.error("Se encontraron registros exactamente iguales que inflan los costos.")
+                st.dataframe(duplicados, use_container_width=True)
+            else: st.success("Cero duplicados detectados.")
+            
+        with t2:
+            if not df_espacios.empty:
+                st.warning("Estos registros fallarán en cruces de bases de datos (Ej: 'BOGOTA ' vs 'BOGOTA').")
+                st.dataframe(df_espacios, use_container_width=True)
+            else: st.success("Sin espacios residuales.")
+            
+        with t3:
+            if not df_casos.empty:
+                st.warning("Nombres escritos sin estandarización. Afecta la agrupación de costos.")
+                st.dataframe(df_casos, use_container_width=True)
+            else: st.success("Textos estandarizados.")
+    else:
+        st.warning("Carga una base de datos primero.")
 
 elif menu == "📥 4. Ingesta y Limpieza Financiera":
     st.markdown("<div class='titulo-principal'>Motor de Limpieza Automática</div>", unsafe_allow_html=True)
     if not df_base.empty:
-        if st.button("🚀 Ejecutar Limpieza y Sanitización"):
-            with st.spinner("Procesando..."):
-                time.sleep(1)
+        st.info("Este motor erradica los problemas encontrados en la auditoría con un solo clic, preparando la data para SAP.")
+        if st.button("🚀 Ejecutar Limpieza Estructural (Sanitización)", type="primary"):
+            with st.spinner("Destruyendo espacios, unificando formatos y purgando duplicados..."):
+                time.sleep(1.5)
                 df_limpio = df_base.copy()
-                for col in df_limpio.select_dtypes(include=['object']).columns:
+                
+                # 1. Eliminar duplicados
+                filas_antes = len(df_limpio)
+                df_limpio = df_limpio.drop_duplicates()
+                duplicados_borrados = filas_antes - len(df_limpio)
+                
+                # 2. Limpieza de texto profunda
+                cols_texto = df_limpio.select_dtypes(include=['object']).columns
+                for col in cols_texto:
                     df_limpio[col] = df_limpio[col].astype(str).str.strip().str.upper()
-                st.success(f"✅ {len(df_limpio):,} filas sanitizadas y consolidadas.")
+                    # Eliminar dobles espacios intermedios
+                    df_limpio[col] = df_limpio[col].apply(lambda x: re.sub(r'\s+', ' ', x))
+                
+                st.success(f"✅ Matriz Sanitizada. Se eliminaron {duplicados_borrados} duplicados y se estandarizaron {len(cols_texto)} columnas de texto.")
                 st.dataframe(df_limpio, use_container_width=True, hide_index=True)
