@@ -18,33 +18,39 @@ import modulos.m2_smart_split as m2
 import modulos.m3_auditoria as m3
 import modulos.m4_limpieza as m4
 
+# 💥 CIRUGÍA: MEMORIA CACHÉ (Evita leer el archivo en cada clic)
+@st.cache_data(show_spinner=False)
+def leer_archivo_cacheado(archivo):
+    df = pd.read_csv(archivo) if archivo.name.endswith('.csv') else pd.read_excel(archivo)
+    df['_Origen_Archivo'] = archivo.name
+    return df
+
+@st.cache_data(show_spinner=False)
+def leer_url_cacheado(url_input):
+    match = re.search(r'/d/([a-zA-Z0-9-_]+)', url_input)
+    if match:
+        url_csv = f"https://docs.google.com/spreadsheets/d/{match.group(1)}/export?format=csv"
+        df = pd.read_csv(url_csv)
+        df['_Origen_Archivo'] = "Google_Sheets"
+        return df
+    return pd.DataFrame()
+
 # --- MOTOR DE CARGA MULTI-ARCHIVO ---
 def procesar_fuentes_datos(archivos_subidos, url_input):
     if archivos_subidos and len(archivos_subidos) > 0:
         lista_dfs = []
         for arch in archivos_subidos:
             try:
-                df_temp = pd.read_csv(arch) if arch.name.endswith('.csv') else pd.read_excel(arch)
-                df_temp['_Origen_Archivo'] = arch.name
-                lista_dfs.append((arch.name, df_temp))
+                lista_dfs.append((arch.name, leer_archivo_cacheado(arch)))
             except Exception: pass
         if lista_dfs: return lista_dfs, "Archivos Cliente"
 
     if url_input and url_input.strip() != "":
-        try:
-            match = re.search(r'/d/([a-zA-Z0-9-_]+)', url_input)
-            if match:
-                url_csv = f"https://docs.google.com/spreadsheets/d/{match.group(1)}/export?format=csv"
-                df = pd.read_csv(url_csv)
-                df['_Origen_Archivo'] = "Google_Sheets"
-                return [("Google_Sheets", df)], "Nube Externa"
-        except Exception: pass
+        df_url = leer_url_cacheado(url_input)
+        if not df_url.empty:
+            return [("Google_Sheets", df_url)], "Nube Externa"
 
-    try:
-        df = pd.read_csv("datos_logistica_demo.csv")
-        df['_Origen_Archivo'] = "datos_logistica_demo.csv"
-        return [("datos_logistica_demo.csv", df)], "Demo Central"
-    except Exception: return [], "Sin Datos"
+    return [], "Sin Datos"
 
 # --- BARRA LATERAL ---
 with st.sidebar:
