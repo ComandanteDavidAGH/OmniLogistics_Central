@@ -101,5 +101,7 @@ def ejecutar(df_base, fuente_activa):
     st.plotly_chart(fig3, use_container_width=True)
 
     st.markdown("---")
-    st.markdown("### 🗄️ Bóveda de Datos Conciliada")
-    st.dataframe(df_base.drop(columns=['__Métrica_Limpia', '__Cat_Limpia', '__Estatus_Limpio', '__Fecha_Limpia']), use_container_width=True, hide_index=True)
+    st.markdown("### 🗄️ Bóveda de Datos Conciliada (Muestra Top 1000)")
+    # 💥 LIMITAMOS A 1000 FILAS PARA QUE EL NAVEGADOR NO SE CONGELE
+    df_mostrar = df_base.drop(columns=['__Métrica_Limpia', '__Cat_Limpia', '__Estatus_Limpio', '__Fecha_Limpia'], errors='ignore')
+    st.dataframe(df_mostrar.head(1000), use_container_width=True, hide_index=True)
