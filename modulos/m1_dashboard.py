@@ -23,15 +23,19 @@ def ejecutar(df_base, fuente_activa):
     
     st.markdown("**⚙️ Configuración Dinámica de Gráficos (Mapeo en vivo)**")
     
+    # Detección inteligente ampliada
     col_costo_auto = [c for c in df_base.columns if any(p in c.lower() for p in ['costo', 'valor', 'monto', 'precio', 'fob', 'cif', 'total', 'usd'])]
     col_estatus_auto = [c for c in df_base.columns if any(p in c.lower() for p in ['estatus', 'estado', 'status', 'novedad', 'alerta', 'condicion', 'retraso', 'etapa'])]
     col_cat_auto = [c for c in df_base.columns if any(p in c.lower() for p in ['transp', 'proveedor', 'categoria', 'bodega', 'origen', 'destino', 'modo', 'tipo', 'via', 'puerto'])]
+    col_fecha_auto = [c for c in df_base.columns if any(p in c.lower() for p in ['fecha', 'date', 'mes', 'año', 'year', 'periodo', 'creacion'])]
 
-    c_cfg1, c_cfg2, c_cfg3 = st.columns(3)
+    # 4 Selectores para control total
+    c_cfg1, c_cfg2, c_cfg3, c_cfg4 = st.columns(4)
     
-    col_cat = c_cfg1.selectbox("📊 Eje X (Agrupación/Categoría):", df_base.columns, index=df_base.columns.get_loc(col_cat_auto[0]) if col_cat_auto else 0)
-    col_costo = c_cfg2.selectbox("💰 Métrica (Dinero/Volumen):", df_base.columns, index=df_base.columns.get_loc(col_costo_auto[0]) if col_costo_auto else 0)
-    col_estatus = c_cfg3.selectbox("🚦 Columna de Estatus (Semáforo):", df_base.columns, index=df_base.columns.get_loc(col_estatus_auto[0]) if col_estatus_auto else 0)
+    col_cat = c_cfg1.selectbox("📊 Categoría (Eje X/Color):", df_base.columns, index=df_base.columns.get_loc(col_cat_auto[0]) if col_cat_auto else 0)
+    col_costo = c_cfg2.selectbox("💰 Métrica (Dinero):", df_base.columns, index=df_base.columns.get_loc(col_costo_auto[0]) if col_costo_auto else 0)
+    col_estatus = c_cfg3.selectbox("🚦 Estatus (Semáforo):", df_base.columns, index=df_base.columns.get_loc(col_estatus_auto[0]) if col_estatus_auto else 0)
+    col_fecha = c_cfg4.selectbox("📅 Eje Temporal (Tendencia):", df_base.columns, index=df_base.columns.get_loc(col_fecha_auto[0]) if col_fecha_auto else 0)
 
     total_filas = len(df_base)
     
@@ -43,6 +47,7 @@ def ejecutar(df_base, fuente_activa):
         
     pct_novedad = (novedades / total_filas * 100) if total_filas > 0 else 0
 
+    # TARJETAS DE KPI
     c1, c2, c3, c4 = st.columns(4)
     c1.markdown(f"<div class='kpi-container'><div class='kpi-title'>Volumen de Registros</div><p class='kpi-value-single'>{total_filas:,}</p></div>", unsafe_allow_html=True)
     c2.markdown(f"<div class='kpi-container' style='border-left-color: #28a745;'><div class='kpi-title'>Capital Comprometido</div><p class='kpi-value-single'>${costo_total:,.0f}<span class='kpi-currency'>COP/USD</span></p></div>", unsafe_allow_html=True)
@@ -51,6 +56,7 @@ def ejecutar(df_base, fuente_activa):
 
     st.markdown("<br>", unsafe_allow_html=True)
     
+    # --- FILA 1: BARRAS Y SEMÁFORO ---
     col_a, col_b = st.columns(2)
     
     with col_a:
@@ -68,5 +74,27 @@ def ejecutar(df_base, fuente_activa):
         fig2.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font=dict(color="white"))
         st.plotly_chart(fig2, use_container_width=True)
 
+    # --- FILA 2: TENDENCIA TEMPORAL (EL GRÁFICO IMPONENTE) ---
+    st.markdown("---")
+    st.markdown(f"### 📈 Evolución en el Tiempo ({col_costo} a lo largo de {col_fecha})")
+    
+    # Agrupamos por Fecha Y por Categoría para generar múltiples líneas como en la imagen
+    df_tendencia = df_base.groupby([col_fecha, col_cat])['Costo_Limpio'].sum().reset_index()
+    # Ordenamos por fecha para que la línea fluya correctamente de izquierda a derecha
+    df_tendencia = df_tendencia.sort_values(by=col_fecha)
+    
+    # Generamos el gráfico de líneas. El color divide la data en múltiples líneas
+    fig3 = px.line(df_tendencia, x=col_fecha, y='Costo_Limpio', color=col_cat, markers=True)
+    fig3.update_layout(
+        plot_bgcolor="rgba(0,0,0,0)", 
+        paper_bgcolor="rgba(0,0,0,0)", 
+        font=dict(color="white"),
+        xaxis_title=col_fecha,
+        yaxis_title="Capital",
+        legend_title=col_cat
+    )
+    st.plotly_chart(fig3, use_container_width=True)
+
+    st.markdown("---")
     st.markdown("### 🗄️ Bóveda de Datos Conciliada")
     st.dataframe(df_base, use_container_width=True, hide_index=True)
