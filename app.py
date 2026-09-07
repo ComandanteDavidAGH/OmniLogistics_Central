@@ -1,16 +1,52 @@
 import streamlit as st
 import pandas as pd
 import re
+import time
 
-# --- CONFIGURACIÓN CORPORATIVA ---
-st.set_page_config(page_title="OmniLogistics OS | Demo", page_icon="🌐", layout="wide", initial_sidebar_state="expanded")
+# --- 1. CONFIGURACIÓN CORPORATIVA (Debe ser la primera línea) ---
+st.set_page_config(page_title="OmniLogistics OS", page_icon="🔐", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
 <style>
     [data-testid="stToolbarActions"], .stAppDeployButton, footer { display: none !important; }
     .main { background-color: #0e1117; }
+    .login-box { background-color: #1a1c23; padding: 40px; border-radius: 12px; border-left: 5px solid #d4af37; box-shadow: 0 8px 20px rgba(0,0,0,0.5); text-align: center; }
 </style>
 """, unsafe_allow_html=True)
+
+# --- 2. BÓVEDA DE SEGURIDAD (SISTEMA DE LOGIN) ---
+if 'autenticado' not in st.session_state:
+    st.session_state['autenticado'] = False
+
+if not st.session_state['autenticado']:
+    _, col_login, _ = st.columns([1, 1.2, 1])
+    with col_login:
+        st.markdown("<br><br><br><br>", unsafe_allow_html=True)
+        st.markdown("<div class='login-box'>", unsafe_allow_html=True)
+        st.markdown("<h1 style='color: white; font-family: \"Arial Black\";'>OMNILOGISTICS OS</h1>", unsafe_allow_html=True)
+        st.caption("ACCESO TÁCTICO RESTRINGIDO")
+        st.markdown("---")
+        
+        usuario = st.text_input("👤 Credencial de Operador:")
+        clave = st.text_input("🔑 Código de Autorización:", type="password")
+        
+        if st.button("🔓 Iniciar Secuencia de Desbloqueo", type="primary", use_container_width=True):
+            # Credenciales maestras (Puedes cambiarlas luego)
+            if usuario.lower() == "comandante" and clave == "omega2026":
+                st.success("✅ Acceso Concedido. Iniciando turbinas...")
+                time.sleep(1)
+                st.session_state['autenticado'] = True
+                st.rerun()
+            else:
+                st.error("🚨 Credenciales denegadas. Intento registrado en bitácora.")
+        st.markdown("</div>", unsafe_allow_html=True)
+    
+    # 🛑 MURO DE CONTENCIÓN: Si no está autenticado, el código muere aquí.
+    st.stop()
+
+# =====================================================================
+# 🟢 ZONA SEGURA: EL CÓDIGO DE TU APP COMIENZA AQUÍ
+# =====================================================================
 
 # --- IMPORTACIÓN DE MÓDULOS AISLADOS ---
 import modulos.m1_dashboard as m1
@@ -18,7 +54,7 @@ import modulos.m2_smart_split as m2
 import modulos.m3_auditoria as m3
 import modulos.m4_limpieza as m4
 
-# 💥 CIRUGÍA: MEMORIA CACHÉ (Evita leer el archivo en cada clic)
+# --- MEMORIA CACHÉ ---
 @st.cache_data(show_spinner=False)
 def leer_archivo_cacheado(archivo):
     df = pd.read_csv(archivo) if archivo.name.endswith('.csv') else pd.read_excel(archivo)
@@ -67,6 +103,11 @@ with st.sidebar:
     st.markdown("**📥 Carga Multi-Archivo:**")
     archivos_cliente = st.file_uploader("Sube archivos (CSV/Excel):", type=['csv', 'xlsx'], accept_multiple_files=True)
     url_input = st.text_input("🔗 Conectar Nube Externa:", placeholder="Pegar enlace...")
+    
+    st.markdown("---")
+    if st.button("🚪 Cerrar Sesión", use_container_width=True):
+        st.session_state['autenticado'] = False
+        st.rerun()
 
 fuentes, tipo_origen = procesar_fuentes_datos(archivos_cliente, url_input)
 
