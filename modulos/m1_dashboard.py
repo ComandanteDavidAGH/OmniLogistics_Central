@@ -28,7 +28,6 @@ def ejecutar(df_base, fuente_activa):
     col_cat_auto = [c for c in df_base.columns if any(p in c.lower() for p in ['transp', 'proveedor', 'categoria', 'bodega', 'origen', 'destino', 'modo', 'tipo', 'via', 'puerto'])]
     col_fecha_auto = [c for c in df_base.columns if any(p in c.lower() for p in ['fecha', 'date', 'mes', 'año', 'year', 'periodo', 'creacion'])]
 
-    # 💥 INYECCIÓN: Opción global para apagar variables
     opciones_columnas = ["--- No Aplica ---"] + list(df_base.columns)
 
     c_cfg1, c_cfg2, c_cfg3, c_cfg4 = st.columns(4)
@@ -38,28 +37,52 @@ def ejecutar(df_base, fuente_activa):
     col_estatus = c_cfg3.selectbox("🚦 Estatus (Semáforo):", opciones_columnas, index=(df_base.columns.get_loc(col_estatus_auto[0]) + 1) if col_estatus_auto else 0)
     col_fecha = c_cfg4.selectbox("📅 Eje Temporal:", opciones_columnas, index=(df_base.columns.get_loc(col_fecha_auto[0]) + 1) if col_fecha_auto else 0)
 
+    # --- MOTOR DE FILTRADO POR RANGO DE FECHAS ---
+    df_filtrado = df_base.copy()
+    
+    if col_fecha != "--- No Aplica ---":
+        # Convertimos la columna a formato fecha real para poder compararla matemáticamente
+        df_filtrado['__Fecha_Filtro'] = pd.to_datetime(df_filtrado[col_fecha], errors='coerce')
+        fechas_validas = df_filtrado['__Fecha_Filtro'].dropna()
+        
+        if not fechas_validas.empty:
+            min_date = fechas_validas.min().date()
+            max_date = fechas_validas.max().date()
+            
+            st.markdown("---")
+            st.markdown("**🗓️ Filtro de Rango Temporal**")
+            # Selector de rango dual (Inicio y Fin)
+            rango_fechas = st.date_input("Selecciona el periodo a analizar:", [min_date, max_date], min_value=min_date, max_value=max_date)
+            
+            if len(rango_fechas) == 2:
+                fecha_inicio, fecha_fin = rango_fechas
+                # Aplicamos el filtro como un bisturí antes de hacer cualquier cálculo
+                mask = (df_filtrado['__Fecha_Filtro'].dt.date >= fecha_inicio) & (df_filtrado['__Fecha_Filtro'].dt.date <= fecha_fin)
+                df_filtrado = df_filtrado.loc[mask]
+
     # --- MOTOR TURBO: SANITIZACIÓN RÁPIDA DE TIPOS CON FILTRO "NO APLICA" ---
-    total_filas = len(df_base)
+    total_filas = len(df_filtrado)
     
     if col_costo != "--- No Aplica ---":
-        df_base['__Métrica_Limpia'] = pd.to_numeric(df_base[col_costo].astype(str).str.replace(r'[^\d.-]', '', regex=True), errors='coerce').fillna(0)
-        costo_total = df_base['__Métrica_Limpia'].sum()
+        df_filtrado['__Métrica_Limpia'] = pd.to_numeric(df_filtrado[col_costo].astype(str).str.replace(r'[^\d.-]', '', regex=True), errors='coerce').fillna(0)
+        costo_total = df_filtrado['__Métrica_Limpia'].sum()
     else:
-        df_base['__Métrica_Limpia'] = 0
+        df_filtrado['__Métrica_Limpia'] = 0
         costo_total = 0
 
     if col_cat != "--- No Aplica ---":
-        df_base['__Cat_Limpia'] = df_base[col_cat].astype(str).fillna("N/A")
+        df_filtrado['__Cat_Limpia'] = df_filtrado[col_cat].astype(str).fillna("N/A")
         
     if col_estatus != "--- No Aplica ---":
-        df_base['__Estatus_Limpio'] = df_base[col_estatus].astype(str).fillna("N/A")
-        novedades = len(df_base[df_base['__Estatus_Limpio'].str.lower().str.contains('retras|novedad|pendiente|quiebre|sobre|error|falla', na=False)])
+        df_filtrado['__Estatus_Limpio'] = df_filtrado[col_estatus].astype(str).fillna("N/A")
+        novedades = len(df_filtrado[df_filtrado['__Estatus_Limpio'].str.lower().str.contains('retras|novedad|pendiente|quiebre|sobre|error|falla', na=False)])
     else:
         novedades = 0
         
     pct_novedad = (novedades / total_filas * 100) if total_filas > 0 else 0
 
     # --- TARJETAS DE KPI ---
+    st.markdown("---")
     c1, c2, c3, c4 = st.columns(4)
     c1.markdown(f"<div class='kpi-container'><div class='kpi-title'>Volumen de Registros</div><p class='kpi-value-single'>{total_filas:,}</p></div>", unsafe_allow_html=True)
     c2.markdown(f"<div class='kpi-container' style='border-left-color: #28a745;'><div class='kpi-title'>Capital Comprometido</div><p class='kpi-value-single'>${costo_total:,.0f}<span class='kpi-currency'>COP/USD</span></p></div>", unsafe_allow_html=True)
@@ -73,8 +96,8 @@ def ejecutar(df_base, fuente_activa):
     
     with col_a:
         st.markdown("### 📊 Top 15 por Categoría")
-        if col_cat != "--- No Aplica ---" and col_costo != "--- No Aplica ---":
-            df_agrupado = df_base.groupby('__Cat_Limpia')['__Métrica_Limpia'].sum().reset_index()
+        if col_cat != "--- No Aplica ---" and col_costo != "--- No Aplica ---" and total_filas > 0:
+            df_agrupado = df_filtrado.groupby('__Cat_Limpia')['__Métrica_Limpia'].sum().reset_index()
             df_agrupado = df_agrupado.sort_values('__Métrica_Limpia', ascending=False).head(15)
             fig1 = px.bar(df_agrupado, x='__Cat_Limpia', y='__Métrica_Limpia', text_auto='.2s', color='__Métrica_Limpia', color_continuous_scale='Blues')
             fig1.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font=dict(color="white"), xaxis_title=col_cat, yaxis_title="Monto")
@@ -84,8 +107,8 @@ def ejecutar(df_base, fuente_activa):
 
     with col_b:
         st.markdown("### 🎯 Estatus Operativo")
-        if col_estatus != "--- No Aplica ---":
-            df_pie = df_base['__Estatus_Limpio'].value_counts().reset_index().head(10)
+        if col_estatus != "--- No Aplica ---" and total_filas > 0:
+            df_pie = df_filtrado['__Estatus_Limpio'].value_counts().reset_index().head(10)
             df_pie.columns = ['__Estatus_Limpio', 'Conteo']
             fig2 = px.pie(df_pie, names='__Estatus_Limpio', values='Conteo', hole=0.4, color_discrete_sequence=px.colors.qualitative.Set1)
             fig2.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font=dict(color="white"))
@@ -96,15 +119,15 @@ def ejecutar(df_base, fuente_activa):
     # --- FILA 2: TENDENCIA TEMPORAL MULTILÍNEA ---
     st.markdown("---")
     st.markdown("### 📈 Evolución Temporal")
-    if col_fecha != "--- No Aplica ---" and col_cat != "--- No Aplica ---" and col_costo != "--- No Aplica ---":
-        df_base['__Fecha_Limpia'] = df_base[col_fecha].astype(str).fillna("N/A")
-        top_categorias = df_agrupado['__Cat_Limpia'].head(10).tolist()
-        df_tendencia_base = df_base[df_base['__Cat_Limpia'].isin(top_categorias)]
+    if col_fecha != "--- No Aplica ---" and col_cat != "--- No Aplica ---" and col_costo != "--- No Aplica ---" and total_filas > 0:
+        df_filtrado['__Fecha_Str'] = df_filtrado[col_fecha].astype(str).fillna("N/A")
+        top_categorias = df_agrupado['__Cat_Limpia'].head(10).tolist() if 'df_agrupado' in locals() else []
+        df_tendencia_base = df_filtrado[df_filtrado['__Cat_Limpia'].isin(top_categorias)]
         
-        df_tendencia = df_tendencia_base.groupby(['__Fecha_Limpia', '__Cat_Limpia'])['__Métrica_Limpia'].sum().reset_index()
-        df_tendencia = df_tendencia.sort_values(by='__Fecha_Limpia')
+        df_tendencia = df_tendencia_base.groupby(['__Fecha_Str', '__Cat_Limpia'])['__Métrica_Limpia'].sum().reset_index()
+        df_tendencia = df_tendencia.sort_values(by='__Fecha_Str')
         
-        fig3 = px.line(df_tendencia, x='__Fecha_Limpia', y='__Métrica_Limpia', color='__Cat_Limpia', markers=True)
+        fig3 = px.line(df_tendencia, x='__Fecha_Str', y='__Métrica_Limpia', color='__Cat_Limpia', markers=True)
         fig3.update_traces(line=dict(width=3)) 
         fig3.update_layout(
             plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font=dict(color="white"),
@@ -116,6 +139,6 @@ def ejecutar(df_base, fuente_activa):
 
     st.markdown("---")
     st.markdown("### 🗄️ Bóveda de Datos Conciliada (Muestra Top 1000)")
-    cols_a_borrar = [c for c in ['__Métrica_Limpia', '__Cat_Limpia', '__Estatus_Limpio', '__Fecha_Limpia'] if c in df_base.columns]
-    df_mostrar = df_base.drop(columns=cols_a_borrar)
+    cols_a_borrar = [c for c in ['__Métrica_Limpia', '__Cat_Limpia', '__Estatus_Limpio', '__Fecha_Str', '__Fecha_Filtro'] if c in df_filtrado.columns]
+    df_mostrar = df_filtrado.drop(columns=cols_a_borrar, errors='ignore')
     st.dataframe(df_mostrar.head(1000), use_container_width=True, hide_index=True)
