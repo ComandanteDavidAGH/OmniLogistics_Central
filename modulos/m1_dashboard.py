@@ -4,7 +4,7 @@ import plotly.express as px
 import google.generativeai as genai
 import json
 
-# --- MOTOR DE INTELIGENCIA DE CONTEXTO (CON CEBO DE DIAGNÓSTICO) ---
+# --- MOTOR DE INTELIGENCIA DE CONTEXTO ---
 @st.cache_data(show_spinner=False)
 def generar_diagnostico_ia(df_sample_json, df_stats_json, columns_list):
     try:
@@ -15,15 +15,8 @@ def generar_diagnostico_ia(df_sample_json, df_stats_json, columns_list):
 
         genai.configure(api_key=api_key)
         
-        # 1. CEBO: Consultar los modelos habilitados para esta API Key
-        modelos_disponibles = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        
-        if not modelos_disponibles:
-            st.error("🚨 Tu API Key no tiene ningún modelo de generación de texto asignado.")
-            return None
-
-        # 2. Selección dinámica del modelo
-        modelo_a_usar = modelos_disponibles[0] # Asigna automáticamente el primer modelo funcional
+        # Modelo activo oficial de la cuenta
+        modelo_a_usar = 'gemini-3.6-flash'
 
         prompt = f"""
         Eres el motor analítico de un sistema operativo logístico de alto nivel.
@@ -51,14 +44,7 @@ def generar_diagnostico_ia(df_sample_json, df_stats_json, columns_list):
         return json.loads(response.text)
         
     except Exception as e:
-        # Muestra en pantalla qué modelos devolvió la API si ocurre cualquier fallo
-        try:
-            lista_modelos = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        except Exception as err_list:
-            lista_modelos = f"Error al consultar lista: {err_list}"
-            
         st.error(f"🚨 Error de ejecución con la IA: {e}")
-        st.warning(f"📋 Modelos habilitados detectados en tu cuenta: {lista_modelos}")
         return None
 
 def ejecutar(df_base, fuente_activa):
