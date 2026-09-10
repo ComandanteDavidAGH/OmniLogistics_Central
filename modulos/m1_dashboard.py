@@ -21,9 +21,6 @@ try:
 except Exception:
     _GENAI_OK = False
 
-# ÚNICA llamada global a configuración de página
-st.set_page_config(page_title="Génesis Omnilogis OS", page_icon="💠", layout="wide")
-
 VALORES_NULOS = {"none", "nan", "nat", "null", "n/a", "#n/a", "-", "--", "", " "}
 PALABRAS_MONEDA = ("precio", "costo", "valor", "ingreso", "venta", "presupuesto", "salario", "pago", "gasto", "monto")
 PALABRAS_PORCENTAJE = ("%", "porcentaje", "pct", "cumplim", "participac", "tasa", "avance")
@@ -50,48 +47,34 @@ def decimales_sugeridos(serie: pd.Series, config_decimales):
     return 2
 
 # ==============================================================================
-# 2. INGESTA Y CAZADOR DE ENCABEZADOS (TOPOGRAFÍA DE DATOS)
+# 2. CAZADOR DE ENCABEZADOS (TOPOGRAFÍA DE DATOS)
 # ==============================================================================
-def leer_archivo_crudo(archivo) -> pd.DataFrame:
-    nombre = archivo.name.lower()
-    archivo.seek(0)
-    if nombre.endswith((".csv", ".txt")):
-        return pd.read_csv(archivo, header=None, engine="python", encoding="utf-8", errors="ignore")
-    else:
-        xls = pd.ExcelFile(archivo)
-        hoja = xls.sheet_names[0]
-        if len(xls.sheet_names) > 1:
-            hoja = st.sidebar.selectbox("📄 Hoja:", xls.sheet_names, key="hoja_ingesta")
-        return pd.read_excel(xls, sheet_name=hoja, header=None) # Leemos sin cabeceras para escanear todo
-
 def cazador_de_encabezados(df_raw: pd.DataFrame) -> pd.DataFrame:
     """Escanea el lienzo, rellena celdas combinadas y detecta el inicio de la data real."""
-    df = df_raw.dropna(how='all', axis=0).dropna(how='all', axis=1).reset_index(drop=True)
-    if df.empty: return df
+    # Como app.py pudo haber usado la fila 0 como columnas, bajamos las columnas a los datos
+    df_search = pd.concat([pd.DataFrame([df_raw.columns.tolist()]), df_raw.copy()]).reset_index(drop=True)
+    df_search = df_search.dropna(how='all', axis=0).dropna(how='all', axis=1).reset_index(drop=True)
+    if df_search.empty: return df_search
 
     data_idx = 0
-    # 1. Buscar dónde empieza la data (fila con alta densidad de números y datos secuenciales)
-    for i, row in df.iterrows():
+    # 1. Buscar dónde empieza la data (fila con alta densidad de números)
+    for i, row in df_search.iterrows():
         numeros = sum(1 for x in row if isinstance(x, (int, float)) and not pd.isna(x))
         llenas = row.notna().sum()
-        # Si la fila tiene más de un 30% de números o está muy densa, asume que es data
         if (numeros >= len(row) * 0.25) or (llenas >= len(row) * 0.8 and i > 2):
             data_idx = i
             break
 
-    # Si todo parece data desde el inicio
     if data_idx == 0:
-        df.columns = df.iloc[0].astype(str)
-        return df.iloc[1:].reset_index(drop=True)
+        df_search.columns = df_search.iloc[0].astype(str)
+        return df_search.iloc[1:].reset_index(drop=True)
 
     # 2. Aislar bloque de encabezados (ignorar títulos flotantes solitarios)
-    df_headers = df.iloc[0:data_idx].copy()
-    
-    # Filtrar filas de encabezado que solo tengan 1 o 2 celdas llenas (títulos del documento)
+    df_headers = df_search.iloc[0:data_idx].copy()
     valid_headers = df_headers[df_headers.notna().sum(axis=1) >= 3]
     if valid_headers.empty: valid_headers = df_headers
 
-    # 3. EFECTO CASCADA: Relleno horizontal para celdas combinadas (Ej. EMBOLSE -> EMBOLSE -> EMBOLSE)
+    # 3. EFECTO CASCADA: Relleno horizontal para celdas combinadas
     valid_headers = valid_headers.ffill(axis=1)
 
     # 4. COMPRESIÓN VERTICAL DE LINAJE
@@ -99,10 +82,10 @@ def cazador_de_encabezados(df_raw: pd.DataFrame) -> pd.DataFrame:
     for col in valid_headers.columns:
         jerarquia = []
         for val in valid_headers[col]:
-            if pd.notna(val) and str(val).strip():
+            if pd.notna(val) and str(val).strip() and not str(val).startswith("Unnamed"):
                 s = str(val).strip()
                 if s.endswith(".0"): s = s[:-2] # Limpiar años tipo 2025.0
-                if not jerarquia or jerarquia[-1] != s: # Evitar redundancia (EMBOLSE | EMBOLSE)
+                if not jerarquia or jerarquia[-1] != s:
                     jerarquia.append(s)
         
         nombre_final = " | ".join(jerarquia) if jerarquia else f"Col_{col}"
@@ -113,7 +96,7 @@ def cazador_de_encabezados(df_raw: pd.DataFrame) -> pd.DataFrame:
     new_columns = s.where(~s.duplicated(), s + ' (' + s.groupby(s).cumcount().astype(str) + ')')
 
     # 5. Acoplar al dataframe final
-    df_data = df.iloc[data_idx:].copy()
+    df_data = df_search.iloc[data_idx:].copy()
     df_data.columns = new_columns
     
     return df_data.reset_index(drop=True)
@@ -126,7 +109,7 @@ def limpiar_nulos_reales(df: pd.DataFrame) -> pd.DataFrame:
         if pd.isna(v): return np.nan
         if isinstance(v, str):
             s = v.strip()
-            if s.lower() in VALORES_NULOS: return np.nan
+            if s.lower() in VALORES_NULOS or s.lower().startswith("unnamed"): return np.nan
             return s
         return v
     return df.apply(lambda serie: serie.map(_limpiar))
@@ -220,7 +203,7 @@ def inyectar_css():
 def ejecutar(df_base, fuente_activa=None):
     inyectar_css()
     
-    with st.spinner("Decodificando estructura jerárquica..."):
+    with st.spinner("Decodificando topografía del archivo..."):
         res = normalizar_datos(df_base)
         df_norm = res["df_norm"]
         semantica = inferir_semantica(df_norm)
@@ -234,7 +217,6 @@ def ejecutar(df_base, fuente_activa=None):
     if fuente_activa:
         st.caption(f"Origen de datos: {fuente_activa}")
 
-    # TARJETA INNEGOCIABLE DE IA
     if diagnostico:
         alerts_html = "".join([f"<div class='ia-alert'>⚠️ {alerta}</div>" for alerta in diagnostico.get("cuellos_de_botella", [])])
         st.markdown(f"""
@@ -271,7 +253,6 @@ def ejecutar(df_base, fuente_activa=None):
                 st.plotly_chart(fig, use_container_width=True)
 
     with tab_datos:
-        # BÚSQUEDA VECTORIZADA (Rendimiento Extremo)
         buscar = st.text_input("Búsqueda Global en Datos", placeholder="Buscar cualquier coincidencia...")
         df_mostrar = df_norm.copy()
         
@@ -279,7 +260,6 @@ def ejecutar(df_base, fuente_activa=None):
             mask = np.column_stack([df_mostrar[col].astype(str).str.contains(buscar, case=False, na=False) for col in df_mostrar.columns]).any(axis=1)
             df_mostrar = df_mostrar[mask]
 
-        # VISIBILIDAD DE COLUMNAS (Parche de seguridad State)
         with st.expander("👁️ Configurar Columnas Visibles"):
             opciones = list(df_mostrar.columns)
             default_guardados = st.session_state.get("cols_visibles_b2b", opciones)
@@ -288,11 +268,9 @@ def ejecutar(df_base, fuente_activa=None):
 
         df_final = df_mostrar[cols_visibles] if cols_visibles else df_mostrar
 
-        # Destrucción visual de NaN para la UI
         for col in df_final.columns:
             if df_final[col].dtype == 'object': df_final[col] = df_final[col].fillna("")
 
-        # Render
         config = {}
         for col in df_final.columns:
             if semantica.get(col) == "moneda": config[col] = st.column_config.NumberColumn(col, format="$ %.2f")
@@ -300,17 +278,3 @@ def ejecutar(df_base, fuente_activa=None):
             elif semantica.get(col) == "cantidad": config[col] = st.column_config.NumberColumn(col, format="localized")
         
         st.dataframe(df_final, column_config=config, use_container_width=True, hide_index=True, height=600)
-
-def main():
-    st.sidebar.markdown("### 💠 Ingesta")
-    archivo = st.sidebar.file_uploader("Cargar Lienzo (Excel/CSV)", type=["csv", "xlsx"])
-    if archivo:
-        try:
-            ejecutar(leer_archivo_crudo(archivo), getattr(archivo, "name", None))
-        except Exception as e:
-            st.error(f"Falla Crítica: {str(e)}")
-            st.code(traceback.format_exc())
-    else:
-        st.info("A la espera de matriz de datos...")
-
-if __name__ == "__main__": main()
