@@ -28,8 +28,6 @@ try:
 except Exception:
     _GENAI_OK = False
 
-st.set_page_config(page_title="Motor Universal de Datos", page_icon="💠", layout="wide")
-
 VALORES_NULOS = {"none", "nan", "nat", "null", "n/a", "#n/a", "-", "--", "", " "}
 
 
@@ -68,69 +66,188 @@ def decimales_sugeridos(serie, config_decimales):
 # 1. INGESTA UNIVERSAL
 # ==============================================================================
 def cargar_archivo(archivo):
-    """Lee CSV o Excel (con selector de hoja) devolviendo un DataFrame crudo, sin tocar nada."""
+    """Lee CSV o Excel devolviendo la grilla CRUDA (sin asumir fila de encabezado),
+    para que el motor de detección de encabezados multinivel decida cuántas filas
+    son realmente título/encabezado antes de construir las columnas."""
     nombre = archivo.name.lower()
     if nombre.endswith(".csv") or nombre.endswith(".tsv") or nombre.endswith(".txt"):
         sep = "\t" if nombre.endswith(".tsv") else None
         for enc in ("utf-8", "latin-1", "utf-8-sig"):
             try:
                 archivo.seek(0)
-                return pd.read_csv(archivo, sep=sep, engine="python", encoding=enc)
+                return pd.read_csv(archivo, sep=sep, engine="python", encoding=enc, header=None)
             except Exception:
                 continue
         archivo.seek(0)
-        return pd.read_csv(archivo, sep=sep, engine="python", encoding="latin-1", errors="ignore")
+        return pd.read_csv(archivo, sep=sep, engine="python", encoding="latin-1", header=None)
     else:
         archivo.seek(0)
         xls = pd.ExcelFile(archivo)
         hoja = xls.sheet_names[0]
         if len(xls.sheet_names) > 1:
             hoja = st.selectbox("📄 Selecciona la hoja a analizar:", xls.sheet_names, key="selector_hoja")
-        return pd.read_excel(xls, sheet_name=hoja)
+        return pd.read_excel(xls, sheet_name=hoja, header=None)
 
 
-def _promover_encabezado_si_aplica(df):
-    """Si la mayoría de columnas quedaron como 'Unnamed', intenta usar la primera fila
-    de datos como encabezado real (caso típico de encabezados combinados en Excel)."""
-    cols = [str(c) for c in df.columns]
-    ratio_unnamed = sum("Unnamed" in c for c in cols) / max(len(cols), 1)
-    if ratio_unnamed > 0.4 and len(df) > 1:
-        fila0 = df.iloc[0]
-        if fila0.notna().sum() / max(len(fila0), 1) > 0.6:
-            nuevas = [str(v).strip() if pd.notna(v) else c for v, c in zip(fila0, cols)]
-            if len(set(nuevas)) > len(set(cols)) * 0.7:
-                df2 = df.iloc[1:].copy()
-                df2.columns = nuevas
-                return df2.reset_index(drop=True), True
-    return df, False
+def limpiar_nulos_crudo(df):
+    """Convierte cualquier representación de 'vacío' (None, 'None', 'NaN', celdas en
+    blanco de merges de Excel, encabezados automáticos 'Unnamed: N' de pandas, etc.)
+    a un np.nan real, ANTES de tocar encabezados."""
+    patron_unnamed = re.compile(r"^unnamed:\s*\d+$")
+
+    def _limpiar(v):
+        if v is None or (isinstance(v, float) and np.isnan(v)):
+            return np.nan
+        if isinstance(v, str):
+            s = v.strip()
+            if s == "" or s.lower() in VALORES_NULOS or patron_unnamed.match(s.lower()):
+                return np.nan
+            return s
+        return v
+    return df.apply(lambda serie: serie.map(_limpiar))
+
+
+def reconstruir_grilla_cruda(df_crudo):
+    """Convierte lo que llegue (ya sea la grilla realmente cruda de cargar_archivo(),
+    o un DataFrame que un cargador externo ya interpretó con pandas por defecto —como
+    hace el app.py maestro con pd.read_excel/pd.read_csv sin header=None—) a una
+    única representación cruda y homogénea: la fila que pandas consumió como
+    encabezado se reinserta como fila de datos, para que el motor de detección de
+    encabezados multinivel pueda analizarla igual que cualquier otra fila."""
+    columnas_son_posicionales = all(isinstance(c, (int, np.integer)) for c in df_crudo.columns)
+    if columnas_son_posicionales:
+        df_raw = df_crudo.copy()
+        df_raw.columns = range(df_raw.shape[1])
+        return df_raw
+
+    fila_encabezado = pd.DataFrame([[str(c) for c in df_crudo.columns]])
+    cuerpo = df_crudo.copy()
+    cuerpo.columns = range(cuerpo.shape[1])
+    fila_encabezado.columns = cuerpo.columns
+    return pd.concat([fila_encabezado, cuerpo], ignore_index=True)
+
+
+# ==============================================================================
+# 1.1 DETECCIÓN Y CONSOLIDACIÓN DE ENCABEZADOS MULTINIVEL
+# ==============================================================================
+def _densidad_y_variedad(fila):
+    """Para una fila: (proporción de celdas numéricas, proporción de valores únicos)."""
+    vals = fila.dropna()
+    if len(vals) == 0:
+        return 0.0, 0.0
+    numericos = 0
+    for v in vals:
+        if isinstance(v, (int, float, np.integer, np.floating)) and not isinstance(v, bool):
+            numericos += 1
+        elif isinstance(v, str):
+            vs = v.strip().replace(".", "", 1).replace(",", "", 1).replace("-", "", 1).replace("%", "")
+            if vs.isdigit():
+                numericos += 1
+    densidad = numericos / len(vals)
+    variedad = vals.nunique() / len(vals)
+    return densidad, variedad
+
+
+def detectar_filas_encabezado(df_raw, max_filas_header=8):
+    """Sugiere cuántas filas iniciales son encabezado/título (no datos), buscando el
+    primer punto donde varias filas consecutivas son simultáneamente densas en
+    números Y variadas en sus valores (patrón típico de filas de datos reales,
+    a diferencia de una fila de años/categorías que se repite poco)."""
+    tope = min(len(df_raw), max_filas_header + 4)
+    metrica = [_densidad_y_variedad(df_raw.iloc[i]) for i in range(tope)]
+    for i in range(tope):
+        ventana = metrica[i:i + 3]
+        if len(ventana) < 2:
+            break
+        if all(d > 0.5 and v > 0.55 for d, v in ventana):
+            return max(i, 1)
+    return 1  # por defecto: tabla estándar con una sola fila de encabezado
+
+
+def construir_columnas_multinivel(df_raw, n_header):
+    """Convierte las primeras n_header filas (que pueden representar encabezados
+    combinados en varios niveles, como en Excel) en un único nombre de columna por
+    posición, propagando celdas combinadas (forward-fill horizontal) y uniendo los
+    niveles distintos con ' - '. Las filas restantes se convierten en los datos."""
+    n_header = max(int(n_header), 0)
+    if n_header == 0 or len(df_raw) <= n_header:
+        nombres = [f"Columna_{i + 1}" for i in range(df_raw.shape[1])]
+        datos = df_raw.copy()
+        datos.columns = nombres
+        return datos.reset_index(drop=True), nombres
+
+    bloque = df_raw.iloc[:n_header].apply(lambda fila: fila.ffill(), axis=1)
+    datos = df_raw.iloc[n_header:].copy().reset_index(drop=True)
+
+    nombres_finales = []
+    for col_idx in range(bloque.shape[1]):
+        niveles, anterior = [], None
+        for fila_idx in range(bloque.shape[0]):
+            val = bloque.iat[fila_idx, col_idx]
+            if pd.isna(val):
+                continue
+            val_str = str(val).strip()
+            if val_str == "" or val_str.lower() in VALORES_NULOS or val_str == anterior:
+                continue
+            niveles.append(val_str)
+            anterior = val_str
+        nombre = " - ".join(dict.fromkeys(niveles)) if niveles else f"Columna_{col_idx + 1}"
+        nombres_finales.append(nombre)
+
+    vistos, nombres_unicos = {}, []
+    for n in nombres_finales:
+        if n in vistos:
+            vistos[n] += 1
+            nombres_unicos.append(f"{n} ({vistos[n]})")
+        else:
+            vistos[n] = 0
+            nombres_unicos.append(n)
+
+    datos.columns = nombres_unicos
+    return datos, nombres_unicos
+
+
+def panel_estructura(df_raw):
+    """Muestra al usuario cómo se interpretó el encabezado y le permite corregirlo,
+    igual que el paso de 'Usar la primera fila como encabezado' de Power Query/Power BI."""
+    sugerido = detectar_filas_encabezado(df_raw)
+    firma = f"estructura_{df_raw.shape}_{hash(tuple(df_raw.iloc[0].astype(str).tolist()))}"
+
+    with st.expander("🧩 Estructura del archivo (encabezados detectados)", expanded=True):
+        st.caption(
+            "El sistema detecta automáticamente cuántas filas son título/encabezado. "
+            "Si una tabla tiene encabezados combinados o poco comunes, ajusta el número "
+            "aquí — es el mismo control que usarías en Power BI/Power Query para "
+            "'promover encabezados'."
+        )
+        vista_previa = df_raw.head(min(len(df_raw), sugerido + 4)).copy()
+        vista_previa.columns = [f"Col {i+1}" for i in range(vista_previa.shape[1])]
+        st.dataframe(vista_previa, use_container_width=True, hide_index=True, height=220)
+        n_header = st.number_input(
+            "Filas de encabezado a combinar:", min_value=0, max_value=min(len(df_raw), 12),
+            value=sugerido, step=1, key=firma,
+        )
+    return int(n_header)
 
 
 # ==============================================================================
 # 2. NORMALIZACIÓN PROFUNDA (mantiene una capa "original" intacta)
 # ==============================================================================
 @st.cache_data(show_spinner=False)
-def normalizar_datos(df_crudo):
+def normalizar_datos(df_con_encabezado):
+    """Recibe una tabla que YA tiene nombres de columna definitivos (construidos por
+    construir_columnas_multinivel) y aplica limpieza + inferencia de tipos, sin tocar
+    de nuevo la estructura de encabezados."""
     advertencias = []
-    df, promovido = _promover_encabezado_si_aplica(df_crudo)
-    if promovido:
-        advertencias.append("Se detectó un encabezado mal interpretado y se corrigió automáticamente.")
+    df = df_con_encabezado.copy()
 
-    # A. REPARACIÓN DE ENCABEZADOS (celdas combinadas, duplicados, nombres vacíos)
+    # A. NOMBRES DE COLUMNA VACÍOS O DUPLICADOS (red de seguridad)
     nombres_originales = list(df.columns)
-    nuevas_cols, amigables = [], []
-    col_anterior, conteo_unnamed, vistos = "Columna", 1, {}
-
-    for c in df.columns:
+    nuevas_cols, vistos = [], {}
+    for i, c in enumerate(df.columns):
         c_str = str(c).strip()
         if c_str == "" or c_str.lower() == "nan":
-            c_str = f"Columna_{len(nuevas_cols) + 1}"
-        if "Unnamed" in c_str:
-            c_str = f"{col_anterior} (Sub-{conteo_unnamed})"
-            conteo_unnamed += 1
-        else:
-            col_anterior = c_str
-            conteo_unnamed = 1
-
+            c_str = f"Columna_{i + 1}"
         base = c_str
         if base in vistos:
             vistos[base] += 1
@@ -138,10 +255,8 @@ def normalizar_datos(df_crudo):
         else:
             vistos[base] = 0
         nuevas_cols.append(c_str)
-
     if len(set(nombres_originales)) < len(nombres_originales):
         advertencias.append("Se detectaron encabezados duplicados y fueron renombrados automáticamente.")
-
     df.columns = nuevas_cols
     mapa_original = dict(zip(nuevas_cols, nombres_originales))
 
@@ -345,8 +460,7 @@ def panel_configuracion():
         formato_fecha = st.selectbox("Formato de fecha", ["YYYY-MM-DD", "DD/MM/YYYY", "MM/DD/YYYY"], index=0)
         tam_pagina = st.selectbox("Registros por página", [25, 50, 100, 250, 500], index=1)
         densidad = st.radio("Densidad de tabla", ["Estándar", "Compacta"], horizontal=True)
-        mostrar_originales_encabezados = st.checkbox("Mostrar nombres originales de columnas", value=False)
-    return decimales, formato_fecha, tam_pagina, densidad, mostrar_originales_encabezados
+    return decimales, formato_fecha, tam_pagina, densidad
 
 
 def construir_kpis(df, semantica):
@@ -504,11 +618,23 @@ def ejecutar(df_crudo, fuente_activa=None):
             st.info("💡 Bóveda vacía. Carga un dataset para iniciar la arquitectura de datos.")
             return
 
-        decimales_cfg, formato_fecha, tam_pagina, densidad, mostrar_orig = panel_configuracion()
+        decimales_cfg, formato_fecha, tam_pagina, densidad = panel_configuracion()
 
-        df_norm, mapa_original, advertencias, faltantes_por_col = normalizar_datos(df_crudo)
+        # 1) Reconstruir la grilla realmente cruda (por si el df ya llegó pre-procesado
+        #    por un cargador externo, como el app.py maestro) y limpiar tokens de nulos
+        #    ANTES de tocar encabezados, para que "None"/"NaN"/"Unnamed: N" nunca se
+        #    muestren literalmente ni contaminen el nombre de una columna.
+        df_raw = limpiar_nulos_crudo(reconstruir_grilla_cruda(df_crudo))
+
+        # 2) Detectar y construir el encabezado (posiblemente multinivel), con
+        #    control manual disponible para el usuario (estilo Power Query).
+        n_header = panel_estructura(df_raw)
+        df_con_encabezado, _ = construir_columnas_multinivel(df_raw, n_header)
+
+        # 3) Limpiar y tipificar a partir del encabezado ya resuelto.
+        df_norm, mapa_original, advertencias, faltantes_por_col = normalizar_datos(df_con_encabezado)
         semantica = inferir_semantica(df_norm)
-        nombres_visibles = {c: (mapa_original.get(c, c) if mostrar_orig else c) for c in df_norm.columns}
+        nombres_visibles = {c: c for c in df_norm.columns}
 
         diagnostico = generar_diagnostico_ia(
             df_norm.head(3).to_json(date_format="iso"),
@@ -547,7 +673,7 @@ def ejecutar(df_crudo, fuente_activa=None):
         # ------------------------------------------------------------------
         with tab_datos:
             vista = st.radio("Vista de datos:", ["Normalizada", "Original"], horizontal=True, key="vista_datos")
-            df_base = df_norm if vista == "Normalizada" else df_crudo
+            df_base = df_norm if vista == "Normalizada" else df_con_encabezado
 
             st.markdown("**🔍 Filtros inteligentes (bajo demanda)**")
             df_filtrado = construir_filtros(df_base, semantica) if vista == "Normalizada" else df_base.copy()
@@ -576,7 +702,7 @@ def ejecutar(df_crudo, fuente_activa=None):
             else:
                 cols_visibles = list(df_filtrado.columns)
 
-            exportar(df_crudo, df_norm)
+            exportar(df_con_encabezado, df_norm)
 
             df_pagina = paginar(df_filtrado[cols_visibles] if cols_visibles else df_filtrado.iloc[:, 0:0],
                                  tam_pagina, key="pag_tabla")
@@ -603,26 +729,10 @@ def ejecutar(df_crudo, fuente_activa=None):
 
 
 # ==============================================================================
-# 8. PUNTO DE ENTRADA
+# Este módulo NO define un punto de entrada main() ni llama a st.set_page_config().
+# Está pensado para ser importado como modulos.m1_dashboard desde tu app.py maestro,
+# que ya se encarga del login, la carga multi-archivo y la configuración global de
+# la página. El único punto de entrada público es:
+#
+#     ejecutar(df_crudo, fuente_activa=None)
 # ==============================================================================
-def main():
-    st.sidebar.markdown("## 💠 Motor Universal de Datos")
-    st.sidebar.caption("Carga cualquier tabla: producción, ventas, nómina, inventarios, finanzas, logística...")
-    archivo = st.sidebar.file_uploader("📂 Cargar tabla", type=["csv", "tsv", "txt", "xlsx", "xls"])
-
-    if archivo is None:
-        inyectar_css()
-        st.info("💡 Sube un archivo CSV o Excel en el panel lateral para comenzar el análisis.")
-        return
-
-    try:
-        df_crudo = cargar_archivo(archivo)
-    except Exception as e:
-        st.error(f"No fue posible leer el archivo: {e}")
-        return
-
-    ejecutar(df_crudo)
-
-
-if __name__ == "__main__":
-    main()
