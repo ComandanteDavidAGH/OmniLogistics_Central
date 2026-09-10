@@ -690,13 +690,21 @@ def ejecutar(df_crudo, fuente_activa=None):
             if len(df_filtrado.columns) > 10:
                 with st.expander("👁️ Columnas visibles"):
                     cc1, cc2, _ = st.columns([1, 1, 4])
+                    opciones_actuales = list(df_filtrado.columns)
+                    
                     if cc1.button("Mostrar todas"):
-                        st.session_state["cols_visibles"] = list(df_filtrado.columns)
+                        st.session_state["cols_visibles"] = opciones_actuales
                     if cc2.button("Ocultar todas"):
                         st.session_state["cols_visibles"] = []
+                        
+                    # PARCHE DE SEGURIDAD: Solo aplicar predeterminados que existan en la tabla actual
+                    defaults_guardados = st.session_state.get("cols_visibles", opciones_actuales)
+                    defaults_seguros = [c for c in defaults_guardados if c in opciones_actuales]
+
                     cols_visibles = st.multiselect(
-                        "Columnas a mostrar:", df_filtrado.columns,
-                        default=st.session_state.get("cols_visibles", list(df_filtrado.columns)),
+                        "Columnas a mostrar:", 
+                        options=opciones_actuales,
+                        default=defaults_seguros,
                         key="cols_visibles",
                     )
             else:
