@@ -37,9 +37,9 @@ def generar_diagnostico_ia(df_sample_json, df_stats_json, columns_list):
         """
         
         model = genai.GenerativeModel(
-            'gemini-1.5-flash',
-            generation_config={"response_mime_type": "application/json"}
-        )
+    'gemini-1.5-flash-latest',
+    generation_config={"response_mime_type": "application/json"}
+)
         response = model.generate_content(prompt)
         return json.loads(response.text)
     except Exception as e:
