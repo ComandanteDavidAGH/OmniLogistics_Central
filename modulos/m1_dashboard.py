@@ -83,7 +83,8 @@ def ejecutar(df_base, fuente_activa=None):
         if 'unnamed' in s or s in ['', 'nan', 'none']: return np.nan
         return val
         
-    df_headers = df_headers.applymap(limpiar_header).ffill(axis=1)
+    # PARCHE DE VERSIÓN PANDAS: Usamos apply + map en lugar del obsoleto applymap
+    df_headers = df_headers.apply(lambda col: col.map(limpiar_header)).ffill(axis=1)
     
     nuevas_cols = []
     for col_idx in range(len(df_headers.columns)):
