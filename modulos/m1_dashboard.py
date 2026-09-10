@@ -4,7 +4,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import google.generativeai as genai
 import json
-import traceback  # <-- NUEVO: Para el cebo de errores
+import traceback
 
 # --- MOTOR DE INTELIGENCIA DE CONTEXTO ---
 @st.cache_data(show_spinner=False)
@@ -33,7 +33,6 @@ def generar_diagnostico_ia(df_sample_json, df_stats_json, columns_list):
         model = genai.GenerativeModel(modelo_a_usar, generation_config={"response_mime_type": "application/json"})
         respuesta_cruda = model.generate_content(prompt).text
         
-        # Limpieza agresiva por si la IA devuelve bloques Markdown ocultos
         if "```json" in respuesta_cruda: respuesta_cruda = respuesta_cruda.split("```json")[1].split("```")[0].strip()
         elif "```" in respuesta_cruda: respuesta_cruda = respuesta_cruda.split("```")[1].split("```")[0].strip()
             
@@ -67,7 +66,6 @@ def ejecutar(df_base, fuente_activa):
 
         diagnostico = generar_diagnostico_ia(df_base.head(5).to_json(date_format='iso'), df_base.describe(include='all').fillna("").to_json(), list(df_base.columns))
 
-        # Trampa visual si falla la IA
         if diagnostico and "error_ia" in diagnostico:
             st.warning(f"⚠️ Cebo IA activado: Falló el análisis inteligente. Detalles: {diagnostico['error_ia']}")
 
@@ -135,27 +133,57 @@ def ejecutar(df_base, fuente_activa):
                 else: st.info("💡 Selecciona Semáforo para activar.")
 
         with tab_tabla:
-            st.markdown("<div class='subtitulo-estrategico'>🗄️ Bóveda de Datos Limpia (Vista Ejecutiva)</div>", unsafe_allow_html=True)
+            # === LIMPIEZA INTELIGENTE Y RECONSTRUCCIÓN DE CABECERAS ===
             cols_internas = [c for c in df_filtrado.columns if c.startswith('__')]
             df_limpio = df_filtrado.drop(columns=cols_internas, errors='ignore').copy()
             
-            # Parche anti-colapso: Espacios dinámicos únicos para columnas Unnamed
+            # 1. Heredar títulos en celdas combinadas ("Unnamed")
             nuevas_columnas = []
-            espacios = 1
+            col_anterior = "Variable"
+            contador = 1
             for c in df_limpio.columns:
                 if "Unnamed:" in str(c):
-                    nuevas_columnas.append(" " * espacios)
-                    espacios += 1
+                    nuevas_columnas.append(f"{col_anterior} (Sub-{contador})")
+                    contador += 1
                 else:
-                    nuevas_columnas.append(c)
+                    col_anterior = str(c).strip()
+                    nuevas_columnas.append(col_anterior)
+                    contador = 1
                     
             df_limpio.columns = nuevas_columnas
-            df_limpio = df_limpio.fillna("")
-            df_limpio = df_limpio.astype(str)
-            st.dataframe(df_limpio, use_container_width=True, hide_index=True)
+            
+            # Limpiar textos de celdas nulas sin romper los números
+            for col in df_limpio.columns:
+                if df_limpio[col].dtype == 'object':
+                    df_limpio[col] = df_limpio[col].fillna("-")
+            
+            # === PANEL DE FILTRADO DINÁMICO UNIVERSAL ===
+            st.markdown("<div class='subtitulo-estrategico'>🎛️ Filtros Interactivos (Selecciona lo que deseas analizar)</div>", unsafe_allow_html=True)
+            
+            # Paso 1: El usuario elige qué columnas quiere usar para filtrar
+            columnas_para_filtrar = st.multiselect("🔍 Selecciona las columnas que deseas usar como filtro:", df_limpio.columns.tolist())
+            
+            df_mostrar = df_limpio.copy()
+            
+            if columnas_para_filtrar:
+                # Genera columnas dinámicas para colocar los filtros uno al lado del otro
+                cols_filtros = st.columns(len(columnas_para_filtrar))
+                
+                for idx, col in enumerate(columnas_para_filtrar):
+                    with cols_filtros[idx]:
+                        # Extrae los valores únicos de esa columna en específico
+                        valores_unicos = df_mostrar[col].dropna().unique().tolist()
+                        # Crea el selector
+                        seleccion = st.multiselect(f"Filtrar por '{col}':", valores_unicos, default=valores_unicos)
+                        # Aplica el filtro matemático
+                        df_mostrar = df_mostrar[df_mostrar[col].isin(seleccion)]
+
+            st.markdown(f"**Total de registros filtrados:** {len(df_mostrar)}")
+            
+            # Renderizado Nativo (Conserva alineación de números y formato profesional)
+            st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
 
     except Exception as e:
-        # CEBO: Atrapa cualquier error y lo expone en rojo
         st.error("🚨 CEBO ACTIVADO: COLAPSO DEL SISTEMA INTERNO")
         st.error(f"Falla detectada: {e}")
         st.code(traceback.format_exc(), language="python")
