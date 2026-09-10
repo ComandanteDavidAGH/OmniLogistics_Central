@@ -42,9 +42,9 @@ def generar_diagnostico_ia(df_sample_json, df_stats_json, columns_list):
         )
         response = model.generate_content(prompt)
         return json.loads(response.text)
-    except Exception:
+    except Exception as e:
+        st.error(f"🚨 Error de conexión con la IA: {e}")
         return None
-
 
 def ejecutar(df_base, fuente_activa):
     # 💥 INYECCIÓN CSS: DISEÑO EJECUTIVO GÉNESIS
