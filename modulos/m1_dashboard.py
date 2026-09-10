@@ -493,7 +493,10 @@ def exportar(df_original, df_normalizado):
 # ==============================================================================
 # 7. NÚCLEO
 # ==============================================================================
-def ejecutar(df_crudo):
+def ejecutar(df_crudo, fuente_activa=None):
+    """fuente_activa se acepta por compatibilidad con integraciones existentes
+    (p. ej. un app.py externo que haga `m1.ejecutar(df_base, fuente_activa)`);
+    no es obligatorio y no afecta la lógica del motor."""
     try:
         inyectar_css()
 
@@ -514,6 +517,8 @@ def ejecutar(df_crudo):
         )
         titulo = diagnostico.get("titulo_contextual") if diagnostico else "MOTOR UNIVERSAL DE DATOS"
         st.markdown(f"<div class='title-bar'>💠 {titulo}</div>", unsafe_allow_html=True)
+        if fuente_activa:
+            st.caption(f"Fuente: {fuente_activa}")
 
         if diagnostico:
             st.markdown(f"<div class='ia-box'><strong>🤖 Análisis IA</strong><br>{diagnostico.get('resumen_gerencial', '')}</div>",
