@@ -4,20 +4,27 @@ import plotly.express as px
 import google.generativeai as genai
 import json
 
-# --- MOTOR DE INTELIGENCIA DE CONTEXTO ---
+# --- MOTOR DE INTELIGENCIA DE CONTEXTO (CON CEBO DE DIAGNÓSTICO) ---
 @st.cache_data(show_spinner=False)
 def generar_diagnostico_ia(df_sample_json, df_stats_json, columns_list):
-    """
-    Envía metadatos anonimizados a la API para deducción semántica y diagnóstico gerencial.
-    """
     try:
-        # Configurar clave de API desde st.secrets o campo directo
         api_key = st.secrets.get("GEMINI_API_KEY", "")
         if not api_key:
+            st.error("🚨 No se encontró la variable GEMINI_API_KEY en st.secrets.")
             return None
 
         genai.configure(api_key=api_key)
         
+        # 1. CEBO: Consultar los modelos habilitados para esta API Key
+        modelos_disponibles = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        
+        if not modelos_disponibles:
+            st.error("🚨 Tu API Key no tiene ningún modelo de generación de texto asignado.")
+            return None
+
+        # 2. Selección dinámica del modelo
+        modelo_a_usar = modelos_disponibles[0] # Asigna automáticamente el primer modelo funcional
+
         prompt = f"""
         Eres el motor analítico de un sistema operativo logístico de alto nivel.
         Analiza los metadatos de esta matriz de datos:
@@ -36,20 +43,22 @@ def generar_diagnostico_ia(df_sample_json, df_stats_json, columns_list):
         }}
         """
         
-        try:
-    model = genai.GenerativeModel(
-        'gemini-2.0-flash',
-        generation_config={"response_mime_type": "application/json"}
-    )
-except Exception:
-    model = genai.GenerativeModel(
-        'gemini-1.5-pro',
-        generation_config={"response_mime_type": "application/json"}
-    )
+        model = genai.GenerativeModel(
+            modelo_a_usar,
+            generation_config={"response_mime_type": "application/json"}
+        )
         response = model.generate_content(prompt)
         return json.loads(response.text)
+        
     except Exception as e:
-        st.error(f"🚨 Error de conexión con la IA: {e}")
+        # Muestra en pantalla qué modelos devolvió la API si ocurre cualquier fallo
+        try:
+            lista_modelos = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        except Exception as err_list:
+            lista_modelos = f"Error al consultar lista: {err_list}"
+            
+        st.error(f"🚨 Error de ejecución con la IA: {e}")
+        st.warning(f"📋 Modelos habilitados detectados en tu cuenta: {lista_modelos}")
         return None
 
 def ejecutar(df_base, fuente_activa):
