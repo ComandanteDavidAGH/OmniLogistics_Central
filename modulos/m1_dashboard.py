@@ -109,7 +109,8 @@ def limpiar_nulos_reales(df: pd.DataFrame) -> pd.DataFrame:
         if pd.isna(v): return np.nan
         if isinstance(v, str):
             s = v.strip()
-            if s.lower() in VALORES_NULOS or s.lower().startswith("unnamed"): return np.nan
+            # PARCHE: Solo borrar nulos reales, NO la palabra Unnamed (evita la evaporación de datos)
+            if s.lower() in VALORES_NULOS: return np.nan
             return s
         return v
     return df.apply(lambda serie: serie.map(_limpiar))
@@ -206,14 +207,27 @@ def ejecutar(df_base, fuente_activa=None):
     with st.spinner("Decodificando topografía del archivo..."):
         res = normalizar_datos(df_base)
         df_norm = res["df_norm"]
+        
+        # 🛡️ BLINDAJE ESTRUCTURAL: Prevenir colapso si la tabla no tiene columnas
+        if df_norm.empty or len(df_norm.columns) == 0:
+            st.error("🚨 La matriz de datos quedó vacía tras el escaneo. Esto ocurre si el archivo tiene un formato no tabular o está en blanco.")
+            st.caption("Vista en bruto de lo que intentó leer el sistema:")
+            st.dataframe(df_base.head(10))
+            return
+            
         semantica = inferir_semantica(df_norm)
 
+    # 🛡️ BLINDAJE MATEMÁTICO: Proteger a Pandas al intentar describir la tabla
+    try:
+        stats_json = df_norm.describe().to_json()
+    except ValueError:
+        stats_json = "{}"
+
     # IA DIAGNÓSTICO
-    diagnostico = generar_diagnostico_ia(df_norm.head(3).to_json(date_format="iso"), df_norm.describe().to_json(), list(df_norm.columns))
+    diagnostico = generar_diagnostico_ia(df_norm.head(3).to_json(date_format="iso"), stats_json, list(df_norm.columns))
     
     titulo = diagnostico.get("titulo_contextual", "MOTOR UNIVERSAL B2B") if diagnostico else "MOTOR UNIVERSAL B2B"
     st.markdown(f"<div class='title-bar'>💠 {titulo}</div>", unsafe_allow_html=True)
-
     if fuente_activa:
         st.caption(f"Origen de datos: {fuente_activa}")
 
