@@ -217,11 +217,11 @@ def inyectar_css():
     </style>
     """, unsafe_allow_html=True)
 
-def ejecutar_app(df_crudo: pd.DataFrame):
+def ejecutar(df_base, fuente_activa=None):
     inyectar_css()
     
     with st.spinner("Decodificando estructura jerárquica..."):
-        res = normalizar_datos(df_crudo)
+        res = normalizar_datos(df_base)
         df_norm = res["df_norm"]
         semantica = inferir_semantica(df_norm)
 
@@ -230,6 +230,9 @@ def ejecutar_app(df_crudo: pd.DataFrame):
     
     titulo = diagnostico.get("titulo_contextual", "MOTOR UNIVERSAL B2B") if diagnostico else "MOTOR UNIVERSAL B2B"
     st.markdown(f"<div class='title-bar'>💠 {titulo}</div>", unsafe_allow_html=True)
+
+    if fuente_activa:
+        st.caption(f"Origen de datos: {fuente_activa}")
 
     # TARJETA INNEGOCIABLE DE IA
     if diagnostico:
@@ -303,7 +306,7 @@ def main():
     archivo = st.sidebar.file_uploader("Cargar Lienzo (Excel/CSV)", type=["csv", "xlsx"])
     if archivo:
         try:
-            ejecutar_app(leer_archivo_crudo(archivo))
+            ejecutar(leer_archivo_crudo(archivo), getattr(archivo, "name", None))
         except Exception as e:
             st.error(f"Falla Crítica: {str(e)}")
             st.code(traceback.format_exc())
