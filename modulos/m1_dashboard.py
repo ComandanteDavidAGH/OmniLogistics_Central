@@ -1,20 +1,20 @@
 """
-MOTOR RASTREADOR DE DIAGNÓSTICO (V4 - LINAJE CORTO Y ANTI-RUIDO)
-================================================================
+MOTOR RASTREADOR DE DIAGNÓSTICO (V5 - JERARQUÍA PURA)
+=====================================================
 """
 import pandas as pd
 import numpy as np
 import streamlit as st
 
 def ejecutar(df_base, fuente_activa=None):
-    st.title("🕵️ Laboratorio B2B (Rastreador V4 - Linaje Corto)")
+    st.title("🕵️ Laboratorio B2B (Rastreador V5 - Jerarquía Pura)")
     st.markdown("---")
 
     df_raw = df_base.copy()
     data_intruso_search = None
 
     # =====================================================================
-    # FASE 1: AISLAMIENTO BLINDADO
+    # FASE 1: AISLAMIENTO
     # =====================================================================
     if "_Origen_Archivo" in df_raw.columns:
         data_intruso = df_raw["_Origen_Archivo"].copy()
@@ -22,7 +22,7 @@ def ejecutar(df_base, fuente_activa=None):
         df_raw = df_raw.drop(columns=["_Origen_Archivo"])
 
     # =====================================================================
-    # FASE 2: ALINEACIÓN GEOMÉTRICA (NUMPY) Y CORTE
+    # FASE 2: DETECCIÓN DEL HORIZONTE DE DATOS
     # =====================================================================
     nombres_cols = np.array(df_raw.columns)[np.newaxis, :]
     matriz_completa = np.vstack([nombres_cols, df_raw.values])
@@ -47,22 +47,32 @@ def ejecutar(df_base, fuente_activa=None):
         data_idx = bloque_estable_idx - 1
     if data_idx == 0: data_idx = 1 
     
-    st.info(f"🚨 TRAMPA 1 y 2 SUPERADAS: El corte oficial se mantiene exacto en la **Fila {data_idx}**.")
+    st.info(f"🚨 CORTE CONFIRMADO: La data empieza en la **Fila {data_idx}**.")
 
     # =====================================================================
-    # FASE 3: FUSIÓN DE LINAJE (REGLA ANTI-RUIDO Y LINAJE CORTO)
+    # FASE 3: CONSTRUCCIÓN DEL LINAJE (REGLA DE LA HERMANDAD)
     # =====================================================================
-    st.markdown("### 🚨 TRAMPA 3: Fusión de Títulos (Nueva Lógica de Linaje)")
+    st.markdown("### 🚨 TRAMPA 3: Organigrama de Columnas")
     df_headers = df_search.iloc[0:data_idx].copy()
     
     def limpiar_header(val):
         s = str(val).strip()
-        # REGLA 1: Si es nulo, 'unnamed', o muy largo (> 40 chars), lo matamos.
         if pd.isna(val) or 'unnamed' in s.lower() or s.lower() in ['', 'nan', 'none']: return np.nan
-        if len(s) > 40: return np.nan  # FILTRO ANTI-RUIDO ACTIVO
         return s
         
-    df_headers = df_headers.apply(lambda col: col.map(limpiar_header)).ffill(axis=1)
+    df_headers = df_headers.apply(lambda col: col.map(limpiar_header))
+    
+    # 🛡️ REGLA DE LA HERMANDAD: Encontrar dónde empieza realmente el organigrama
+    start_row = 0
+    for idx in range(len(df_headers)):
+        # Contamos cuántos valores únicos reales hay en la fila
+        valores_unicos = df_headers.iloc[idx].dropna().unique()
+        if len(valores_unicos) >= 2:
+            start_row = idx
+            break
+            
+    # Recortamos los títulos flotantes solitarios y hacemos la cascada
+    df_headers = df_headers.iloc[start_row:].ffill(axis=1)
     
     nuevas_cols = []
     for col_idx in range(len(df_headers.columns)):
@@ -75,18 +85,16 @@ def ejecutar(df_base, fuente_activa=None):
                 if not jerarquia or jerarquia[-1] != v_str:
                     jerarquia.append(v_str)
         
-        # REGLA 2: LINAJE CORTO. Conservamos solo los últimos 3 niveles (máximo)
-        jerarquia_corta = jerarquia[-3:] if len(jerarquia) > 3 else jerarquia
-        
-        nombre_final = " | ".join(jerarquia_corta) if jerarquia_corta else f"Col_Vacia_{col_idx}"
+        # Unimos TODO el organigrama desde el start_row
+        nombre_final = " | ".join(jerarquia) if jerarquia else f"Col_{col_idx}"
         nuevas_cols.append(nombre_final)
 
-    st.dataframe(pd.DataFrame({"Columna (Excel)": range(len(nuevas_cols)), "Nombre Nuevo y Limpio": nuevas_cols}).head(30))
+    st.dataframe(pd.DataFrame({"Columna (Excel)": range(len(nuevas_cols)), "Linaje Completo": nuevas_cols}).head(30))
 
     # =====================================================================
     # FASE 4: ENSAMBLAJE FINAL
     # =====================================================================
-    st.markdown("### 🚨 TRAMPA 4: Matriz Operativa Final (Años Visibles)")
+    st.markdown("### 🚨 TRAMPA 4: Matriz Operativa Final")
     df_final = df_search.iloc[data_idx:].copy()
     
     s = pd.Series(nuevas_cols)
@@ -101,4 +109,4 @@ def ejecutar(df_base, fuente_activa=None):
         df_final[col] = df_final[col].apply(lambda x: "" if pd.isna(x) or str(x).strip().lower() in ['nan', 'none', ''] else x)
 
     st.dataframe(df_final.head(15), use_container_width=True)
-    st.success("✅ Verifica la Trampa 3 y 4. ¿Los años ahora se ven limpios, al final de nombres cortos, y listos para ser graficados?")
+    st.success("✅ Revisa la Trampa 3 y 4. ¿Están todos los niveles (PLANTAS > EMBOLSE > ACUMULADO > AÑO) perfectamente unidos y limpios?")
