@@ -83,8 +83,16 @@ def ejecutar(df_base, fuente_activa=None):
         if 'unnamed' in s or s in ['', 'nan', 'none']: return np.nan
         return val
         
-    # PARCHE DE VERSIÓN PANDAS: Usamos apply + map en lugar del obsoleto applymap
-    df_headers = df_headers.apply(lambda col: col.map(limpiar_header)).ffill(axis=1)
+    df_headers = df_headers.apply(lambda col: col.map(limpiar_header))
+    
+    # 🛡️ FILTRO ANTI-TÍTULOS FLOTANTES
+    # Borra filas de cabecera que tengan 1 solo texto aislado (Títulos de documento)
+    # Conserva filas que tengan 2 o más (Ej: PLANTAS y HECTAREAS)
+    filas_con_datos = df_headers.notna().sum(axis=1) > 1
+    df_headers = df_headers[filas_con_datos]
+    
+    # Efecto Cascada Horizontal
+    df_headers = df_headers.ffill(axis=1)
     
     nuevas_cols = []
     for col_idx in range(len(df_headers.columns)):
