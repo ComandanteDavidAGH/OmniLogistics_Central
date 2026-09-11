@@ -1,8 +1,8 @@
 """
-MOTOR B2B (PRUEBA DE CIMIENTOS - ESTÉTICA Y LIMPIEZA VISUAL)
+MOTOR B2B (MATRIZ PURA - LATAM Y DISEÑO PIRAMIDAL)
 ========================================================================
-- Limpieza de Nulos: Se erradica la palabra "None", reemplazándola por celdas en blanco.
-- Pirámide Optimizada: Se suprimen redundancias en los nombres heredados.
+- Formateo LATAM: Puntos para miles, Comas para decimales.
+- Encabezados Piramidales: Uso de saltos de línea (\n) para apilar jerarquías.
 """
 import re
 import pandas as pd
@@ -11,6 +11,27 @@ import streamlit as st
 from typing import Tuple
 
 VALORES_NULOS = {"none", "nan", "nat", "null", "n/a", "#n/a", "-", "--", ""}
+
+def format_latam(valor):
+    """Convierte un número al formato LATAM (1.234,56) para la vista."""
+    if pd.isna(valor) or valor == "":
+        return ""
+    try:
+        v = float(valor)
+        if v.is_integer():
+            return f"{int(v):,}".replace(",", ".")
+        else:
+            # Formateamos con 2 decimales y aplicamos el cambio de gringolandia a LATAM
+            texto = f"{v:,.2f}"
+            # Cambiar comas (miles gringos) a un caracter temporal
+            texto = texto.replace(",", "§")
+            # Cambiar punto (decimal gringo) a coma LATAM
+            texto = texto.replace(".", ",")
+            # Restaurar el punto para miles
+            texto = texto.replace("§", ".")
+            return texto
+    except Exception:
+        return str(valor)
 
 def extractor_logico_universal(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
     origen = "Archivo Base"
@@ -52,16 +73,15 @@ def extractor_logico_universal(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]
                 
                 texto_format = texto.title() if not texto.isdigit() else texto
                 
-                # Optimización Piramidal: Evitar repetición "Embolse ➔ Embolse Años"
                 if texto_format:
                     if not jerarquia:
                         jerarquia.append(texto_format)
                     else:
-                        # Solo lo agrega si no es exactamente igual ni está contenido en la palabra anterior
                         if texto_format.lower() not in jerarquia[-1].lower() and jerarquia[-1].lower() not in texto_format.lower():
                             jerarquia.append(texto_format)
-                    
-        nombre_final = " ➔ ".join(jerarquia) if jerarquia else f"Columna_{col_idx}"
+        
+        # EL SECRETO PIRAMIDAL: Unir con un salto de línea en lugar de flechas horizontales
+        nombre_final = "\n".join(jerarquia) if jerarquia else f"Columna_{col_idx}"
         nuevas_cols.append(nombre_final)
 
     df_datos = df_raw.iloc[ecuador_datos:].copy()
@@ -70,7 +90,7 @@ def extractor_logico_universal(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]
     for col in nuevas_cols:
         if col in conteo:
             conteo[col] += 1
-            cols_unicas.append(f"{col} ({conteo[col]})")
+            cols_unicas.append(f"{col}\n({conteo[col]})")
         else:
             conteo[col] = 0
             cols_unicas.append(col)
@@ -109,12 +129,12 @@ def ejecutar(df_base, fuente_activa=None):
     inyectar_css()
 
     if df_base is None or df_base.empty:
-        st.markdown("<div class='title-bar'>MODO ESTRICTO: 12 COLUMNAS</div>", unsafe_allow_html=True)
+        st.markdown("<div class='title-bar'>MODO ESTRICTO: ESTRUCTURA PIRAMIDAL</div>", unsafe_allow_html=True)
         st.markdown("""
         <div style='background: #111827; border-left: 4px solid #f43f5e; padding: 40px; border-radius: 8px; margin-top: 20px; text-align: center;'>
             <h2 style='color: #f3f4f6; font-family: Orbitron; margin-bottom: 15px;'>ESPERANDO ARCHIVO</h2>
             <p style='color: #9ca3af; font-family: Rajdhani; font-size: 18px; line-height: 1.6;'>
-                Sube tu matriz. El sistema aplicará la limpieza visual profunda.
+                Sube tu matriz. El sistema formateará las comas (LATAM) y apilará los títulos.
             </p>
         </div>
         """, unsafe_allow_html=True)
@@ -124,33 +144,29 @@ def ejecutar(df_base, fuente_activa=None):
         st.session_state["ultima_fuente"] = fuente_activa
         st.cache_data.clear()
 
-    with st.spinner("Procesando Cimientos y Limpiando Nulos..."):
+    with st.spinner("Procesando Cimientos y Formato LATAM..."):
         df_norm, origen = extractor_logico_universal(df_base)
         
         if df_norm.empty:
             st.error("⚠️ El archivo quedó vacío tras la extracción.")
             st.stop()
 
-    st.markdown("<div class='title-bar'>MATRIZ DE DATOS PURA (12 COLUMNAS OPTIMIZADAS)</div>", unsafe_allow_html=True)
+    st.markdown("<div class='title-bar'>MATRIZ PURA (12 COLUMNAS | ESTILO LATAM)</div>", unsafe_allow_html=True)
     st.markdown(f"<div class='source-badge'>📁 ARCHIVO: {origen}</div>", unsafe_allow_html=True)
-    
-    st.info("📌 Observación: Los nombres redundantes fueron compactados y los espacios vacíos ('None') fueron silenciados para una vista gerencial limpia.")
 
     # ---------------------------------------------------------
-    # PARCHE DE FORMATEO VISUAL (ADIÓS "NONE")
+    # PARCHE VISUAL: FORMATEO LATAM Y LIMPIEZA
     # ---------------------------------------------------------
     df_visual = df_norm.copy()
     
-    # Rellenamos nulos numéricos con vacío en la visualización, 
-    # y formateamos enteros para que no salgan con .0
+    # Aplicar formateo a nivel de vista (comas para decimales, espacios para vacíos)
     for col in df_visual.columns:
         if pd.api.types.is_numeric_dtype(df_visual[col]):
-            df_visual[col] = df_visual[col].apply(
-                lambda x: "" if pd.isna(x) else (f"{int(x)}" if x.is_integer() else f"{x:.4f}")
-            )
+            df_visual[col] = df_visual[col].apply(format_latam)
         else:
             df_visual[col] = df_visual[col].fillna("")
 
+    # Mostramos la tabla. Streamlit interpretará los '\n' de las columnas y las hará piramidales
     st.dataframe(
         df_visual, 
         use_container_width=True, 
