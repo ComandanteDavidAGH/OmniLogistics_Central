@@ -1,9 +1,10 @@
 """
-MOTOR UNIVERSAL INTELIGENTE DE DATOS B2B (EDICIÓN AGRÍCOLA MULTI-PANEL)
+MOTOR UNIVERSAL INTELIGENTE DE DATOS B2B (ARQUITECTURA ESTABLE DEFINITIVA)
 ========================================================================
-- Rango Temporal: Selectores de Semana Inicial y Semana Final.
-- Grid Independiente: Selección múltiple de métricas con estilo de gráfico individual.
-- Formato Limpio: Nombres directos sin rutas largas y semanas en enteros.
+- Eje X: Exclusivamente variables categóricas (CINTA / SEMANA).
+- KPIs: Títulos directos con Módulo + Métrica + Año.
+- Filtro por Módulo: Aísla las métricas de la categoría activa para mantener nombres cortos en el Multiselect.
+- Multi-Panel: Gráficos independientes por cuadrícula.
 """
 import io
 import json
@@ -32,7 +33,7 @@ PALETA_NEON = ["#06b6d4", "#38bdf8", "#3b82f6", "#10b981", "#f59e0b", "#8b5cf6",
 
 def fmt_es(valor, decimales=0, prefijo="", sufijo=""):
     if pd.isna(valor) or valor == "":
-        return ""
+        return "0"
     try:
         v = float(valor)
     except Exception:
@@ -48,13 +49,14 @@ def limpiar_semantica(texto):
     return s.title()
 
 def obtener_nombre_limpio(col_completa):
-    """Sustituye rutas compuestas por la métrica final y el año."""
-    partes = [p.strip() for p in col_completa.split(" | ")]
+    partes = [p.strip() for p in str(col_completa).split(" | ")]
     if len(partes) >= 2:
-        métrica_base = partes[-2] if re.match(r'^\d{4}$', partes[-1]) else partes[-1]
+        métrica = partes[-2] if re.match(r'^\d{4}$', partes[-1]) else partes[-1]
         anio = partes[-1] if re.match(r'^\d{4}$', partes[-1]) else ""
-        return f"{métrica_base} ({anio})" if anio else métrica_base
-    return col_completa
+        modulo = partes[0] if len(partes) > 2 else ""
+        prefix = f"{modulo}: " if modulo and modulo != métrica else ""
+        return f"{prefix}{métrica} ({anio})" if anio else f"{prefix}{métrica}"
+    return str(col_completa)
 
 def cazador_de_encabezados(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
     origen_etiqueta = "Archivo General"
@@ -226,7 +228,7 @@ def generar_diagnostico_ia(muestra_json, stats_json, columnas):
 def inyectar_css():
     st.markdown("""
     <style>
-        @import url('[https://fonts.googleapis.com/css2?family=Orbitron:wght@500;800;900&family=Rajdhani:wght@500;600;700&display=swap](https://fonts.googleapis.com/css2?family=Orbitron:wght@500;800;900&family=Rajdhani:wght@500;600;700&display=swap)');
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;800;900&family=Rajdhani:wght@500;600;700&display=swap');
         .main { background-color: #0b0f19; }
         .title-bar { color: #38bdf8; font-family: 'Orbitron', sans-serif; font-size: 24px; font-weight: 800; border-bottom: 2px solid #1e293b; padding-bottom: 12px; margin-bottom: 20px; } 
         .source-badge { display: inline-block; background: rgba(15, 23, 42, 0.8); border: 1px solid #38bdf8; color: #38bdf8; padding: 4px 12px; border-radius: 20px; font-family: 'Rajdhani', sans-serif; font-size: 13px; font-weight: 700; margin-bottom: 18px; }
@@ -234,8 +236,8 @@ def inyectar_css():
         .ia-title { color: #10b981; font-family: 'Orbitron', sans-serif; font-size: 14px; font-weight: 800; margin-bottom: 10px; } 
         .ia-summary { color: #e2e8f0; font-family: 'Rajdhani', sans-serif; font-size: 17px; font-weight: 500; line-height: 1.5; margin-bottom: 12px; } 
         .ia-alert { color: #fb7185; font-family: 'Rajdhani', sans-serif; font-size: 15px; font-weight: 700; margin-top: 6px; padding-left: 10px; border-left: 3px solid #fb7185; } 
-        .kpi-card { background: rgba(15, 23, 42, 0.75); padding: 18px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.08); border-top: 3px solid #06b6d4; min-height: 105px; }
-        .kpi-title { font-family: 'Rajdhani', sans-serif; font-size: 12px; color: #38bdf8; font-weight: 700; text-transform: uppercase; line-height: 1.2; } 
+        .kpi-card { background: rgba(15, 23, 42, 0.75); padding: 16px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.08); border-top: 3px solid #06b6d4; min-height: 110px; }
+        .kpi-title { font-family: 'Rajdhani', sans-serif; font-size: 13px; color: #38bdf8; font-weight: 700; text-transform: uppercase; line-height: 1.3; } 
         .kpi-val { font-family: 'Orbitron', sans-serif; font-size: 20px; color: #f8fafc; font-weight: 800; margin-top: 8px; }
         .chart-box { background: rgba(15, 23, 42, 0.6); padding: 15px; border-radius: 12px; border: 1px solid #1e293b; margin-bottom: 20px; }
     </style>
@@ -281,9 +283,15 @@ def ejecutar(df_base, fuente_activa=None):
 
     with tab_dash:
         cols_num = [c for c, t in semantica.items() if t in ("cantidad", "moneda", "porcentaje")]
-        cols_dimensiones = [c for c in df_norm.columns if c not in cols_num]
         
-        # Filtro de métricas limpias para tarjetas KPI
+        # EXCLUSIÓN ESTRICTA DE COLUMNAS DE AGRUPACIÓN PARA EL EJE X
+        cols_eje_x = [c for c in df_norm.columns if any(p in c.lower() for p in ("semana", "cinta")) or semantica.get(c) in ("categoria", "texto")]
+        if not cols_eje_x:
+            cols_eje_x = [c for c in df_norm.columns if c not in cols_num]
+        if not cols_eje_x:
+            cols_eje_x = [df_norm.columns[0]]
+
+        # EXCLUSIÓN DE NÚMEROS DE SEMANA Y CINTA DE LAS TARJETAS KPI
         kpi_metrics = [c for c in cols_num if not any(p in c.lower() for p in ("semana", "cinta", "codigo", "id", "nit"))]
         if not kpi_metrics:
             kpi_metrics = cols_num
@@ -291,7 +299,7 @@ def ejecutar(df_base, fuente_activa=None):
         if not cols_num:
             st.warning("No se detectaron variables numericas para generar analitica.")
         else:
-            # 1. TARJETAS KPI SUPERIORES CON NOMBRES LIMPIOS
+            # 1. TARJETAS KPI SUPERIORES CON TITULOS LIMPIOS Y GARANTIZADOS
             kpi_cols = st.columns(min(4, len(kpi_metrics)))
             for i, col in enumerate(kpi_metrics[:4]):
                 val_total = df_norm[col].sum()
@@ -311,12 +319,9 @@ def ejecutar(df_base, fuente_activa=None):
             
             st.markdown("<br><hr style='border-color: #1e293b;'><br>", unsafe_allow_html=True)
 
-            # ==============================================================================
-            # 2. IDENTIFICACIÓN Y FILTRADO POR RANGO DE SEMANAS
-            # ==============================================================================
+            # 2. CONTROLES DEL DASHBOARD (FILTRO DE RANGO DE SEMANAS + EJE X CATEGÓRICO)
             col_semana = next((c for c in df_norm.columns if "semana" in c.lower()), None)
             semanas_validas = []
-            
             if col_semana:
                 for v in df_norm[col_semana].dropna().unique():
                     try:
@@ -329,19 +334,16 @@ def ejecutar(df_base, fuente_activa=None):
             if not semanas_validas:
                 semanas_validas = [1, 52]
 
-            opciones_eje = sorted(cols_dimensiones, key=lambda x: (0 if 'cinta' in x.lower() else 1 if 'semana' in x.lower() else 2))
             anios_detectados = sorted(list(set(re.findall(r'\b20\d{2}\b', " ".join(df_norm.columns)))))
 
-            # CONTROLES SUPERIORES: EJE, AÑO Y RANGO DE SEMANAS
             c_eje, c_anio, c_s_ini, c_s_fin = st.columns([1.2, 0.8, 1.0, 1.0])
             
-            eje_seleccionado = c_eje.selectbox("1. Agrupar Eje X:", opciones_eje if opciones_eje else df_norm.columns)
+            eje_seleccionado = c_eje.selectbox("1. Agrupar Eje X:", cols_eje_x, format_func=lambda x: x.split(" | ")[-1])
             anio_sel = c_anio.selectbox("2. Año Operativo:", anios_detectados if anios_detectados else ["General"])
-            
             sem_inicial = c_s_ini.selectbox("3. Semana Inicial:", semanas_validas, index=0)
             sem_final = c_s_fin.selectbox("4. Semana Final:", semanas_validas, index=len(semanas_validas)-1)
 
-            # FILTRADO DE DATOS POR RANGO DE SEMANA
+            # FILTRADO DE DATOS POR RANGO DE SEMANAS
             df_filtrado = df_norm.copy()
             if col_semana and col_semana in df_filtrado.columns:
                 def dentro_rango(val):
@@ -352,27 +354,37 @@ def ejecutar(df_base, fuente_activa=None):
                         return True
                 df_filtrado = df_filtrado[df_filtrado[col_semana].apply(dentro_rango)]
 
-            # 3. SELECCIÓN MÚLTIPLE DE MÉTRICAS A GRAFICAR
-            metrics_opciones = [c for c in cols_num if anio_sel in c or anio_sel == "General"]
-            if not metrics_opciones:
-                metrics_opciones = cols_num
+            # 3. FILTRADO POR MÓDULO PADRE PARA MANTENER NOMBRES CORTOS EN EL MULTISELECT
+            arbol_modulos = {}
+            for col in cols_num:
+                partes = [p.strip() for p in col.split(" | ")]
+                modulo = partes[0] if len(partes) > 1 else "General"
+                if modulo not in arbol_modulos:
+                    arbol_modulos[modulo] = []
+                if col in [c for c in cols_num if anio_sel in c or anio_sel == "General"]:
+                    arbol_modulos[modulo].append(col)
 
-            st.markdown("<h5 style='color: #38bdf8;'>5. Selecciona las métricas para proyectar la cuadrícula del Dashboard:</h5>", unsafe_allow_html=True)
-            metricas_seleccionadas = st.multiselect(
-                "Métricas activas:",
-                options=metrics_opciones,
-                default=metrics_opciones[:min(4, len(metrics_opciones))],
-                format_func=obtener_nombre_limpio,
-                label_visibility="collapsed"
+            modulos_disponibles = [m for m in arbol_modulos.keys() if arbol_modulos[m]]
+            if not modulos_disponibles:
+                modulos_disponibles = list(arbol_modulos.keys())
+
+            c_mod, c_multi = st.columns([1.0, 2.0])
+            modulo_activo = c_mod.selectbox("5. Sección / Módulo:", modulos_disponibles)
+            
+            opciones_metricas_modulo = arbol_modulos.get(modulo_activo, cols_num)
+
+            metricas_seleccionadas = c_multi.multiselect(
+                "6. Métricas activas a graficar:",
+                options=opciones_metricas_modulo,
+                default=opciones_metricas_modulo[:min(4, len(opciones_metricas_modulo))],
+                format_func=obtener_nombre_limpio
             )
 
             st.markdown("<br>", unsafe_allow_html=True)
 
-            # ==============================================================================
-            # 4. CUADRÍCULA MULTI-PANEL CON ESTILOS GRÁFICOS INDEPENDIENTES
-            # ==============================================================================
+            # 4. RENDERIZADO DEL DASHBOARD MULTI-PANEL
             if not metricas_seleccionadas:
-                st.info("Selecciona al menos una métrica para renderizar los paneles analíticos.")
+                st.info("Selecciona al menos una métrica para proyectar el panel.")
             else:
                 for i in range(0, len(metricas_seleccionadas), 2):
                     cols_grid = st.columns(2)
@@ -383,13 +395,11 @@ def ejecutar(df_base, fuente_activa=None):
                             nombre_limpio = obtener_nombre_limpio(metric_col)
                             
                             with cols_grid[j]:
-                                # Tarjeta contenedora con selector individual de estilo
                                 st.markdown("<div class='chart-box'>", unsafe_allow_html=True)
                                 
-                                c_hdr, c_sel_tipo = st.columns([1.5, 1.0])
-                                c_hdr.markdown(f"<span style='color:#38bdf8; font-family:Orbitron; font-size:13px; font-weight:800;'>{nombre_limpio.upper()}</span>", unsafe_allow_html=True)
+                                c_hdr, c_sel_tipo = st.columns([1.4, 1.0])
+                                c_hdr.markdown(f"<span style='color:#38bdf8; font-family:Orbitron; font-size:12px; font-weight:800;'>{nombre_limpio.upper()}</span>", unsafe_allow_html=True)
                                 
-                                # Selector dinámico de tipo de gráfico por panel individual
                                 default_estilo = "Dona (Distribución)" if "cinta" in eje_seleccionado.lower() else "Barras (Comparación)"
                                 estilo_chart = c_sel_tipo.selectbox(
                                     "Tipo de Gráfico:",
@@ -399,10 +409,8 @@ def ejecutar(df_base, fuente_activa=None):
                                     label_visibility="collapsed"
                                 )
                                 
-                                # Agrupación de datos
                                 df_g = df_filtrado.groupby(eje_seleccionado)[metric_col].sum().reset_index(name='Valor')
                                 
-                                # Limpieza estricta de semanas / categorías en el eje X
                                 df_g[eje_seleccionado] = df_g[eje_seleccionado].apply(
                                     lambda x: str(int(float(x))) if pd.notna(x) and str(x).replace('.','',1).isdigit() else str(x) if pd.notna(x) else ""
                                 )
@@ -417,7 +425,6 @@ def ejecutar(df_base, fuente_activa=None):
                                 unidad_fmt = "$" if semantica.get(metric_col) == "moneda" else ""
                                 label_eje = eje_seleccionado.split(" | ")[-1] if " | " in eje_seleccionado else eje_seleccionado
 
-                                # RENDERIZADO SEGÚN EL ESTILO SELECCIONADO PARA ESTE PANEL
                                 if "Dona" in estilo_chart:
                                     fig = px.pie(df_g, names=eje_seleccionado, values='Valor', hole=0.45, template="plotly_dark", color_discrete_sequence=PALETA_NEON)
                                     fig.update_traces(textinfo="label+percent", hovertemplate=f"<b>%{{label}}:</b> {unidad_fmt}%{{value:,.0f}}<extra></extra>")
