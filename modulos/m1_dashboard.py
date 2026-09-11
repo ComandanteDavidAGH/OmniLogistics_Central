@@ -49,14 +49,19 @@ def limpiar_semantica(texto):
     return s.title()
 
 def obtener_nombre_limpio(col_completa):
-    partes = [p.strip() for p in str(col_completa).split(" | ")]
+    """Extrae un título legible y garantizado para KPIs y selectores."""
+    if not col_completa or pd.isna(col_completa):
+        return "Métrica Operativa"
+    partes = [p.strip() for p in str(col_completa).split(" | ") if p.strip()]
+    if not partes:
+        return str(col_completa)
     if len(partes) >= 2:
-        métrica = partes[-2] if re.match(r'^\d{4}$', partes[-1]) else partes[-1]
         anio = partes[-1] if re.match(r'^\d{4}$', partes[-1]) else ""
-        modulo = partes[0] if len(partes) > 2 else ""
-        prefix = f"{modulo}: " if modulo and modulo != métrica else ""
-        return f"{prefix}{métrica} ({anio})" if anio else f"{prefix}{métrica}"
-    return str(col_completa)
+        métrica = partes[-2] if anio and len(partes) >= 2 else partes[-1]
+        modulo = partes[0] if len(partes) >= 3 else ""
+        prefijo = f"{modulo} - " if modulo and modulo != métrica else ""
+        return f"{prefijo}{métrica} ({anio})" if anio else f"{prefijo}{métrica}"
+    return partes[0]
 
 def cazador_de_encabezados(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
     origen_etiqueta = "Archivo General"
@@ -236,9 +241,9 @@ def inyectar_css():
         .ia-title { color: #10b981; font-family: 'Orbitron', sans-serif; font-size: 14px; font-weight: 800; margin-bottom: 10px; } 
         .ia-summary { color: #e2e8f0; font-family: 'Rajdhani', sans-serif; font-size: 17px; font-weight: 500; line-height: 1.5; margin-bottom: 12px; } 
         .ia-alert { color: #fb7185; font-family: 'Rajdhani', sans-serif; font-size: 15px; font-weight: 700; margin-top: 6px; padding-left: 10px; border-left: 3px solid #fb7185; } 
-        .kpi-card { background: rgba(15, 23, 42, 0.75); padding: 16px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.08); border-top: 3px solid #06b6d4; min-height: 110px; }
+        .kpi-card { background: rgba(15, 23, 42, 0.85); padding: 16px; border-radius: 10px; border: 1px solid rgba(56, 189, 248, 0.2); border-top: 4px solid #38bdf8; min-height: 110px; }
         .kpi-title { font-family: 'Rajdhani', sans-serif; font-size: 13px; color: #38bdf8; font-weight: 700; text-transform: uppercase; line-height: 1.3; } 
-        .kpi-val { font-family: 'Orbitron', sans-serif; font-size: 20px; color: #f8fafc; font-weight: 800; margin-top: 8px; }
+        .kpi-val { font-family: 'Orbitron', sans-serif; font-size: 22px; color: #ffffff; font-weight: 800; margin-top: 8px; text-shadow: 0 0 10px rgba(56, 189, 248, 0.3); }
         .chart-box { background: rgba(15, 23, 42, 0.6); padding: 15px; border-radius: 12px; border: 1px solid #1e293b; margin-bottom: 20px; }
     </style>
     """, unsafe_allow_html=True)
@@ -284,22 +289,22 @@ def ejecutar(df_base, fuente_activa=None):
     with tab_dash:
         cols_num = [c for c, t in semantica.items() if t in ("cantidad", "moneda", "porcentaje")]
         
-        # EXCLUSIÓN ESTRICTA DE COLUMNAS DE AGRUPACIÓN PARA EL EJE X
+        # EJE X RESTREÑIDO EXCLUSIVAMENTE A VARIABLES CATEGÓRICAS / DIMENSIONES
         cols_eje_x = [c for c in df_norm.columns if any(p in c.lower() for p in ("semana", "cinta")) or semantica.get(c) in ("categoria", "texto")]
         if not cols_eje_x:
             cols_eje_x = [c for c in df_norm.columns if c not in cols_num]
         if not cols_eje_x:
             cols_eje_x = [df_norm.columns[0]]
 
-        # EXCLUSIÓN DE NÚMEROS DE SEMANA Y CINTA DE LAS TARJETAS KPI
+        # TARJETAS KPIS: EXCLUIR COLUMNAS DE SEMANA/CINTA
         kpi_metrics = [c for c in cols_num if not any(p in c.lower() for p in ("semana", "cinta", "codigo", "id", "nit"))]
         if not kpi_metrics:
             kpi_metrics = cols_num
 
         if not cols_num:
-            st.warning("No se detectaron variables numericas para generar analitica.")
+            st.warning("No se detectaron variables numéricas para generar analítica.")
         else:
-            # 1. TARJETAS KPI SUPERIORES CON TITULOS LIMPIOS Y GARANTIZADOS
+            # 1. TARJETAS KPI SUPERIORES CON TÍTULOS BLINDADOS Y VISIBLES
             kpi_cols = st.columns(min(4, len(kpi_metrics)))
             for i, col in enumerate(kpi_metrics[:4]):
                 val_total = df_norm[col].sum()
@@ -319,7 +324,7 @@ def ejecutar(df_base, fuente_activa=None):
             
             st.markdown("<br><hr style='border-color: #1e293b;'><br>", unsafe_allow_html=True)
 
-            # 2. CONTROLES DEL DASHBOARD (FILTRO DE RANGO DE SEMANAS + EJE X CATEGÓRICO)
+            # 2. CONTROLES DEL DASHBOARD (FILTROS NO BLOQUEANTES CON OPCIÓN 'TODOS')
             col_semana = next((c for c in df_norm.columns if "semana" in c.lower()), None)
             semanas_validas = []
             if col_semana:
@@ -338,8 +343,12 @@ def ejecutar(df_base, fuente_activa=None):
 
             c_eje, c_anio, c_s_ini, c_s_fin = st.columns([1.2, 0.8, 1.0, 1.0])
             
-            eje_seleccionado = c_eje.selectbox("1. Agrupar Eje X:", cols_eje_x, format_func=lambda x: x.split(" | ")[-1])
-            anio_sel = c_anio.selectbox("2. Año Operativo:", anios_detectados if anios_detectados else ["General"])
+            def formato_nombre_eje(c):
+                partes = str(c).split(" | ")
+                return partes[-1] if partes else str(c)
+
+            eje_seleccionado = c_eje.selectbox("1. Agrupar Eje X:", cols_eje_x, format_func=formato_nombre_eje)
+            anio_sel = c_anio.selectbox("2. Año Operativo:", ["TODOS"] + anios_detectados if anios_detectados else ["TODOS"])
             sem_inicial = c_s_ini.selectbox("3. Semana Inicial:", semanas_validas, index=0)
             sem_final = c_s_fin.selectbox("4. Semana Final:", semanas_validas, index=len(semanas_validas)-1)
 
@@ -354,29 +363,28 @@ def ejecutar(df_base, fuente_activa=None):
                         return True
                 df_filtrado = df_filtrado[df_filtrado[col_semana].apply(dentro_rango)]
 
-            # 3. FILTRADO POR MÓDULO PADRE PARA MANTENER NOMBRES CORTOS EN EL MULTISELECT
-            arbol_modulos = {}
+            # 3. FILTRADO LIBRE DE MÉTRICAS (SIN BLOQUEOS RIGIDOS)
+            arbol_modulos = {"TODAS LAS SECCIONES": cols_num}
             for col in cols_num:
                 partes = [p.strip() for p in col.split(" | ")]
                 modulo = partes[0] if len(partes) > 1 else "General"
                 if modulo not in arbol_modulos:
                     arbol_modulos[modulo] = []
-                if col in [c for c in cols_num if anio_sel in c or anio_sel == "General"]:
-                    arbol_modulos[modulo].append(col)
-
-            modulos_disponibles = [m for m in arbol_modulos.keys() if arbol_modulos[m]]
-            if not modulos_disponibles:
-                modulos_disponibles = list(arbol_modulos.keys())
+                arbol_modulos[modulo].append(col)
 
             c_mod, c_multi = st.columns([1.0, 2.0])
-            modulo_activo = c_mod.selectbox("5. Sección / Módulo:", modulos_disponibles)
+            modulo_activo = c_mod.selectbox("5. Sección / Módulo:", list(arbol_modulos.keys()))
             
-            opciones_metricas_modulo = arbol_modulos.get(modulo_activo, cols_num)
+            opciones_disponibles = arbol_modulos.get(modulo_activo, cols_num)
+            if anio_sel != "TODOS":
+                opciones_filtradas_anio = [c for c in opciones_disponibles if anio_sel in c]
+                if opciones_filtradas_anio:
+                    opciones_disponibles = opciones_filtradas_anio
 
             metricas_seleccionadas = c_multi.multiselect(
                 "6. Métricas activas a graficar:",
-                options=opciones_metricas_modulo,
-                default=opciones_metricas_modulo[:min(4, len(opciones_metricas_modulo))],
+                options=opciones_disponibles,
+                default=opciones_disponibles[:min(4, len(opciones_disponibles))],
                 format_func=obtener_nombre_limpio
             )
 
