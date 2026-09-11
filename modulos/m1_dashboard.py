@@ -2,7 +2,7 @@
 MOTOR UNIVERSAL INTELIGENTE DE DATOS (EDICIÓN AGRÍCOLA / BANANO B2B)
 =====================================================================
 Arquitectura con Selección Automática de Eje Semana/Cinta,
-Filtro de Semanas (1-52) y Jerarquía Simplificada Segmentos 1 al 4.
+Filtro de Semanas (1-52), Formateo Limpio de Decimales y Sintaxis Multi-Línea.
 """
 import io
 import json
@@ -28,16 +28,21 @@ PALABRAS_PORCENTAJE = ("%", "porcentaje", "pct", "cumplim", "participac", "tasa"
 PALABRAS_CODIGO = ("id", "código", "codigo", "cod_", "nit", "documento", "referencia", "ref_")
 
 def fmt_es(valor, decimales=2, prefijo="", sufijo=""):
-    if pd.isna(valor) or valor == "": return ""
-    try: v = float(valor)
-    except Exception: return str(valor)
+    if pd.isna(valor) or valor == "":
+        return ""
+    try:
+        v = float(valor)
+    except Exception:
+        return str(valor)
     texto = f"{v:,.{decimales}f}".replace(",", "§").replace(".", ",").replace("§", ".")
     return f"{prefijo}{texto}{sufijo}"
 
 def decimales_sugeridos(serie: pd.Series):
     serie_valida = serie.dropna()
-    if serie_valida.empty: return 0
-    if np.allclose(serie_valida % 1, 0, atol=1e-9): return 0
+    if serie_valida.empty:
+        return 0
+    if np.allclose(serie_valida % 1, 0, atol=1e-9):
+        return 0
     return 2
 
 def limpiar_semantica(texto):
@@ -75,13 +80,15 @@ def cazador_de_encabezados(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
     data_idx = bloque_estable_idx
     if bloque_estable_idx > 0 and 0 < radiografia[bloque_estable_idx - 1] < radiografia[bloque_estable_idx]:
         data_idx = bloque_estable_idx - 1
-    if data_idx == 0: data_idx = 1 
+    if data_idx == 0:
+        data_idx = 1 
 
     df_headers = df_search.iloc[0:data_idx].copy()
     
     def limpiar_basico(val):
         s = str(val).strip()
-        if pd.isna(val) or 'unnamed' in s.lower() or s.lower() in ['', 'nan', 'none']: return np.nan
+        if pd.isna(val) or 'unnamed' in s.lower() or s.lower() in ['', 'nan', 'none']:
+            return np.nan
         return s
         
     df_headers = df_headers.apply(lambda col: col.map(limpiar_basico))
@@ -102,7 +109,8 @@ def cazador_de_encabezados(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
             val = df_headers.iloc[fila_idx, col_idx]
             if pd.notna(val):
                 v_str = str(val).strip()
-                if v_str.endswith(".0"): v_str = v_str[:-2]
+                if v_str.endswith(".0"):
+                    v_str = v_str[:-2]
                 v_str_limpio = limpiar_semantica(v_str)
                 if v_str_limpio and (not jerarquia or jerarquia[-1] != v_str_limpio):
                     jerarquia.append(v_str_limpio)
@@ -132,23 +140,28 @@ def normalizar_datos(df_raw: pd.DataFrame) -> Dict[str, Any]:
     df, etiqueta_origen = cazador_de_encabezados(df_raw)
     
     def _limpiar(v):
-        if pd.isna(v): return np.nan
+        if pd.isna(v):
+            return np.nan
         if isinstance(v, str):
             s = v.strip()
-            if s.lower() in VALORES_NULOS or s.lower().startswith("unnamed"): return np.nan
+            if s.lower() in VALORES_NULOS or s.lower().startswith("unnamed"):
+                return np.nan
             return s
         return v
         
     df = df.apply(lambda serie: serie.map(_limpiar))
     
     for col in df.columns:
-        if pd.api.types.is_numeric_dtype(df[col]) or pd.api.types.is_datetime64_any_dtype(df[col]): continue
+        if pd.api.types.is_numeric_dtype(df[col]) or pd.api.types.is_datetime64_any_dtype(df[col]):
+            continue
         serie = df[col].dropna().astype(str).str.strip()
-        if serie.empty: continue
+        if serie.empty:
+            continue
         limpio = serie.str.replace(r"[$\s]", "", regex=True).str.replace("%", "", regex=False)
         limpio = limpio.str.replace(r"\.(?=\d{3}(?:\D|$))", "", regex=True).str.replace(",", ".", regex=False)
         num = pd.to_numeric(limpio, errors="coerce")
-        if num.notna().sum() / max(len(serie), 1) > 0.6: df[col] = num
+        if num.notna().sum() / max(len(serie), 1) > 0.6:
+            df[col] = num
             
     return {"df_norm": df, "origen": etiqueta_origen}
 
@@ -156,12 +169,17 @@ def inferir_semantica(df: pd.DataFrame) -> Dict[str, str]:
     sem = {}
     for col in df.columns:
         nombre, serie = col.lower(), df[col]
-        if pd.api.types.is_datetime64_any_dtype(serie): sem[col] = "fecha"
+        if pd.api.types.is_datetime64_any_dtype(serie):
+            sem[col] = "fecha"
         elif pd.api.types.is_numeric_dtype(serie):
-            if any(p in nombre for p in PALABRAS_CODIGO) and serie.dropna().apply(lambda x: float(x).is_integer()).all(): sem[col] = "codigo"
-            elif any(p in nombre for p in PALABRAS_PORCENTAJE): sem[col] = "porcentaje"
-            elif any(p in nombre for p in PALABRAS_MONEDA): sem[col] = "moneda"
-            else: sem[col] = "cantidad"
+            if any(p in nombre for p in PALABRAS_CODIGO) and serie.dropna().apply(lambda x: float(x).is_integer()).all():
+                sem[col] = "codigo"
+            elif any(p in nombre for p in PALABRAS_PORCENTAJE):
+                sem[col] = "porcentaje"
+            elif any(p in nombre for p in PALABRAS_MONEDA):
+                sem[col] = "moneda"
+            else:
+                sem[col] = "cantidad"
         else:
             sem[col] = "categoria" if (len(df) > 0 and serie.nunique(dropna=True)/len(df) < 0.5) else "texto"
     return sem
@@ -188,4 +206,245 @@ def generar_diagnostico_ia(muestra_json, stats_json, columnas):
                 """
                 model = genai.GenerativeModel("gemini-1.5-flash", generation_config={"response_mime_type": "application/json"})
                 respuesta = model.generate_content(prompt).text.strip()
-                if "```json" in respuesta: respuesta = respuesta.split("
+                if "```json" in respuesta:
+                    respuesta = respuesta.split("```json")[1].split("```")[0].strip()
+                return json.loads(respuesta)
+        except Exception:
+            pass
+    
+    return {
+        "titulo_contextual": "MONITOREO AGRÍCOLA Y RENDIMIENTO OPERATIVO",
+        "resumen_gerencial": "Trazabilidad semanal y jerarquía de embalaje consolidadas exitosamente.",
+        "cuellos_de_botella": [
+            "Atención: Evaluar la variación de cajas convertidas frente al embolse por semana.",
+            "Recomendación: Monitorear el ratio de merma comparado contra la cinta activa."
+        ]
+    }
+
+def inyectar_css():
+    st.markdown('''
+    <style>
+        @import url('[https://fonts.googleapis.com/css2?family=Orbitron:wght@500;800;900&family=Rajdhani:wght@500;600;700&display=swap](https://fonts.googleapis.com/css2?family=Orbitron:wght@500;800;900&family=Rajdhani:wght@500;600;700&display=swap)');
+        .main { background-color: #0b0f19; }
+        .title-bar { color: #38bdf8; font-family: 'Orbitron', sans-serif; font-size: 24px; font-weight: 800; border-bottom: 2px solid #1e293b; padding-bottom: 12px; margin-bottom: 20px; } 
+        .source-badge { display: inline-block; background: rgba(15, 23, 42, 0.8); border: 1px solid #38bdf8; color: #38bdf8; padding: 4px 12px; border-radius: 20px; font-family: 'Rajdhani', sans-serif; font-size: 13px; font-weight: 700; margin-bottom: 18px; }
+        .ia-card { background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.8)); border-left: 5px solid #10b981; padding: 22px; border-radius: 12px; margin-bottom: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); } 
+        .ia-title { color: #10b981; font-family: 'Orbitron', sans-serif; font-size: 14px; font-weight: 800; margin-bottom: 10px; } 
+        .ia-summary { color: #e2e8f0; font-family: 'Rajdhani', sans-serif; font-size: 17px; font-weight: 500; line-height: 1.5; margin-bottom: 12px; } 
+        .ia-alert { color: #fb7185; font-family: 'Rajdhani', sans-serif; font-size: 15px; font-weight: 700; margin-top: 6px; padding-left: 10px; border-left: 3px solid #fb7185; } 
+        .kpi-card { background: rgba(15, 23, 42, 0.75); padding: 18px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.08); border-top: 3px solid #06b6d4; }
+        .kpi-title { font-family: 'Rajdhani', sans-serif; font-size: 13px; color: #94a3b8; font-weight: 700; text-transform: uppercase; } 
+        .kpi-val { font-family: 'Orbitron', sans-serif; font-size: 22px; color: #f8fafc; font-weight: 800; margin-top: 6px; }
+    </style>
+    ''', unsafe_allow_html=True)
+
+def ejecutar(df_base, fuente_activa=None):
+    inyectar_css()
+    
+    with st.spinner("Sincronizando trazabilidad agrícola e Inteligencia artificial..."):
+        res = normalizar_datos(df_base)
+        df_norm = res["df_norm"]
+        origen_etiqueta = res["origen"]
+        semantica = inferir_semantica(df_norm)
+
+    try:
+        stats_json = df_norm.describe().to_json()
+    except Exception:
+        stats_json = "{}"
+        
+    diagnostico = generar_diagnostico_ia(df_norm.head(3).to_json(date_format="iso"), stats_json, list(df_norm.columns))
+    
+    titulo = diagnostico.get("titulo_contextual", "SISTEMA OPERATIVO DE DATOS B2B")
+    st.markdown(f"<div class='title-bar'>⚡ {titulo}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='source-badge'>📄 ORIGEN DE DATOS: {origen_etiqueta}</div>", unsafe_allow_html=True)
+
+    alerts = "".join([f"<div class='ia-alert'>⚠️ {alerta}</div>" for alerta in diagnostico.get("cuellos_de_botella", [])])
+    st.markdown(
+        f"""
+        <div class='ia-card'>
+            <div class='ia-title'>🤖 DIAGNÓSTICO TÁCTICO (GÉNESIS IA)</div>
+            <div class='ia-summary'>{diagnostico.get('resumen_gerencial', '')}</div>
+            <div>{alerts}</div>
+        </div>
+        """, 
+        unsafe_allow_html=True
+    )
+
+    tab_dash, tab_datos = st.tabs(["🚀 COMMAND CENTER (DASHBOARD)", "🗄️ BÓVEDA DE DATOS NORMALIZADA"])
+
+    with tab_dash:
+        cols_num = [c for c, t in semantica.items() if t in ("cantidad", "moneda", "porcentaje")]
+        
+        if not cols_num:
+            st.warning("No se detectaron variables numéricas para generar analítica.")
+        else:
+            # 1. TARJETAS KPI FUTURISTAS
+            kpi_cols = st.columns(min(4, len(cols_num)))
+            for i, col in enumerate(cols_num[:4]):
+                val_total = df_norm[col].sum()
+                formato = f"${fmt_es(val_total)}" if semantica[col] == "moneda" else fmt_es(val_total, decimales_sugeridos(df_norm[col]))
+                
+                partes = [p.strip() for p in col.split(" | ")]
+                nombre_kpi = " - ".join(partes[:-1]) if len(partes) > 1 and re.match(r'^\d{4}$', partes[-1]) else col
+                
+                with kpi_cols[i]:
+                    st.markdown(
+                        f"""
+                        <div class='kpi-card'>
+                            <div class='kpi-title'>{nombre_kpi[:30]}</div>
+                            <div class='kpi-val'>{formato}</div>
+                        </div>
+                        """, 
+                        unsafe_allow_html=True
+                    )
+            
+            st.markdown("<br><hr style='border-color: #1e293b;'><br>", unsafe_allow_html=True)
+
+            # ==============================================================================
+            # 2. CONSTRUCCIÓN DE ARBOLESCENCIA SEGMENTOS 1 A 4
+            # ==============================================================================
+            arbol_4_niveles = {}
+            for col in cols_num:
+                partes = [p.strip() for p in col.split(" | ")]
+                
+                if len(partes) >= 4:
+                    s1 = partes[0]
+                    s2 = partes[1]
+                    s3 = partes[-2]
+                    s4 = partes[-1] if re.match(r'^\d{4}$', partes[-1]) else "General"
+                elif len(partes) == 3:
+                    s1 = partes[0]
+                    s2 = partes[0]
+                    s3 = partes[1]
+                    s4 = partes[2] if re.match(r'^\d{4}$', partes[2]) else "General"
+                elif len(partes) == 2:
+                    s1 = "General"
+                    s2 = partes[0]
+                    s3 = partes[0] if re.match(r'^\d{4}$', partes[1]) else partes[1]
+                    s4 = partes[1] if re.match(r'^\d{4}$', partes[1]) else "General"
+                else:
+                    s1 = "General"
+                    s2 = "General"
+                    s3 = col
+                    s4 = "General"
+                
+                if s1 not in arbol_4_niveles:
+                    arbol_4_niveles[s1] = {}
+                if s2 not in arbol_4_niveles[s1]:
+                    arbol_4_niveles[s1][s2] = {}
+                if s3 not in arbol_4_niveles[s1][s2]:
+                    arbol_4_niveles[s1][s2][s3] = {}
+                arbol_4_niveles[s1][s2][s3][s4] = col
+
+            # 3. DETECCIÓN AUTOMÁTICA DEL EJE X (SEMANA / CINTA)
+            col_eje_x = None
+            for c in df_norm.columns:
+                c_low = c.lower()
+                if "semana" in c_low or "cinta" in c_low:
+                    col_eje_x = c
+                    break
+            if not col_eje_x:
+                cols_cat = [c for c, t in semantica.items() if t in ("categoria", "texto")]
+                col_eje_x = cols_cat[0] if cols_cat else df_norm.columns[0]
+
+            semanas_unicas = ["TODAS"]
+            if col_eje_x in df_norm.columns:
+                vals_sem = df_norm[col_eje_x].dropna().astype(str).unique().tolist()
+                semanas_unicas += sorted([v for v in vals_sem if v.strip() != ""])
+
+            # 4. SELECTORES CON NOMENCLATURA SIMPLIFICADA (SEGMENTO 1 AL 4)
+            c_s1, c_s2, c_s3, c_s4, c_sem = st.columns([1.1, 1.1, 1.3, 0.8, 1.0])
+            
+            s1_disp = list(arbol_4_niveles.keys())
+            s1_sel = c_s1.selectbox("Segmento 1:", s1_disp)
+            
+            s2_disp = list(arbol_4_niveles[s1_sel].keys())
+            s2_sel = c_s2.selectbox("Segmento 2:", s2_disp)
+            
+            s3_disp = list(arbol_4_niveles[s1_sel][s2_sel].keys())
+            s3_sel = c_s3.selectbox("Segmento 3:", s3_disp)
+            
+            s4_disp = list(arbol_4_niveles[s1_sel][s2_sel][s3_sel].keys())
+            s4_sel = c_s4.selectbox("Segmento 4 (Año):", s4_disp)
+
+            sem_sel = c_sem.selectbox("Filtro Semana:", semanas_unicas)
+
+            col_target = arbol_4_niveles[s1_sel][s2_sel][s3_sel][s4_sel]
+
+            # 5. RENDERIZADO DEL GRÁFICO Y FORMATO LIMPIO DE DECIMALES EN HOVER/BARRA
+            df_g_base = df_norm.copy()
+            if sem_sel != "TODAS":
+                df_g_base = df_g_base[df_g_base[col_eje_x].astype(str) == str(sem_sel)]
+
+            df_g = df_g_base.groupby(col_eje_x)[col_target].sum().reset_index(name='Valor').sort_values('Valor', ascending=False).head(20)
+
+            # Redondeo previo para eliminar basura de flotantes en Python
+            df_g['Valor_Display'] = df_g['Valor'].apply(lambda v: round(v, 1) if pd.notna(v) else 0)
+
+            fig = px.bar(
+                df_g, 
+                x=col_eje_x, 
+                y='Valor',
+                text='Valor_Display',
+                template="plotly_dark",
+                color='Valor',
+                color_continuous_scale="Electric"
+            )
+
+            unidad_fmt = "$" if semantica.get(col_target) == "moneda" else ""
+            
+            # Formato de etiqueta sobre la barra y tooltip flotante (Hover) estético
+            fig.update_traces(
+                texttemplate=f'{unidad_fmt}%{{text:,.1f}}', 
+                textposition='outside',
+                hovertemplate=f"<b>{col_eje_x}:</b> %{{x}}<br><b>Valor:</b> {unidad_fmt}%{{y:,.1f}}<extra></extra>",
+                marker_line_color='#06b6d4',
+                marker_line_width=1.5,
+                opacity=0.9
+            )
+            
+            titulo_grafico = f"{s2_sel.upper()} ➔ {s3_sel.upper()} ({s4_sel})" if s1_sel != "General" else col_target.upper()
+            if sem_sel != "TODAS":
+                titulo_grafico += f" - SEMANA {sem_sel}"
+
+            label_x_limpio = col_eje_x.split(" | ")[-1] if " | " in col_eje_x else col_eje_x
+            fig.update_layout(
+                title=dict(
+                    text=f"TRAZABILIDAD: {titulo_grafico}",
+                    font=dict(family='Orbitron', size=15, color='#38bdf8')
+                ),
+                paper_bgcolor='rgba(11, 15, 25, 0)',
+                plot_bgcolor='rgba(15, 23, 42, 0.5)',
+                xaxis=dict(title=dict(text=f"Eje Operativo: {label_x_limpio}", font=dict(color='#94a3b8')), tickfont=dict(color='#cbd5e1')),
+                yaxis=dict(title=dict(text="Volumen / Unidad", font=dict(color='#94a3b8')), tickfont=dict(color='#cbd5e1')),
+                coloraxis_showscale=False,
+                hoverlabel=dict(
+                    bgcolor="#0f172a",
+                    font_size=13,
+                    font_family="Rajdhani",
+                    font_color="#f8fafc"
+                ),
+                margin=dict(l=20, r=20, t=60, b=40),
+                height=460
+            )
+
+            st.plotly_chart(fig, use_container_width=True)
+
+    with tab_datos:
+        st.markdown("<h4 style='color: #38bdf8; font-family: Orbitron;'>🗄️ BÓVEDA DE DATOS OPERATIVOS NORMALIZADA</h4>", unsafe_allow_html=True)
+        df_mostrar = df_norm.copy()
+        
+        for col in df_mostrar.columns:
+            if df_mostrar[col].dtype == 'object':
+                df_mostrar[col] = df_mostrar[col].fillna("")
+        
+        config = {}
+        for col in df_mostrar.columns:
+            if semantica.get(col) == "moneda":
+                config[col] = st.column_config.NumberColumn(col, format="$ %.2f")
+            elif semantica.get(col) == "porcentaje":
+                config[col] = st.column_config.NumberColumn(col, format="%.2f%%")
+            elif semantica.get(col) == "cantidad":
+                config[col] = st.column_config.NumberColumn(col, format="localized")
+        
+        st.dataframe(df_mostrar, column_config=config, use_container_width=True, hide_index=True, height=550)
