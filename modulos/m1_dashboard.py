@@ -1,8 +1,8 @@
 """
 MOTOR UNIVERSAL INTELIGENTE DE DATOS (EDICIÓN AGRÍCOLA / BANANO B2B)
 =====================================================================
-Arquitectura con Selección Automática de Eje Semana/Cinta,
-Filtro de Semanas (1-52), Formateo Limpio de Decimales y Sintaxis Multi-Línea.
+Arquitectura con Rango Temporal de Semanas (Semana Inicial ➔ Semana Final),
+Trazabilidad de Cinta/Semana y Jerarquía Limpia de 4 Niveles.
 """
 import io
 import json
@@ -191,7 +191,7 @@ def generar_diagnostico_ia(muestra_json, stats_json, columnas):
             if api_key:
                 genai.configure(api_key=api_key)
                 prompt = f"""
-                Eres Génesis IA, motor de inteligencia agrícola y logística B2B especializado en cultivos de banano y frutas.
+                Eres Génesis IA, motor de inteligencia agrícola B2B especializado en producción bananera.
                 Analiza esta estructura:
                 Columnas: {columnas}
                 Muestra: {muestra_json}
@@ -199,9 +199,9 @@ def generar_diagnostico_ia(muestra_json, stats_json, columnas):
                 
                 Responde en JSON:
                 {{
-                    "titulo_contextual": "MONITOREO AGRÍCOLA Y RENDIMIENTO BANANERO",
-                    "resumen_gerencial": "Análisis táctico de embolse, cajas procesadas y merma por semana de empaque.",
-                    "cuellos_de_botella": ["Desviación de volumen en semanas de cinta crítica", "Control de ratio de conversión por hectárea"]
+                    "titulo_contextual": "MONITOREO DE TRAZABILIDAD Y COSECHA BANANERA",
+                    "resumen_gerencial": "Evaluación táctica de volumen acumulado por rango de semanas e intensidad de enfunde.",
+                    "cuellos_de_botella": ["Anomalías de producción en tramos de semana críticos", "Variación de rendimiento por tipo de cinta"]
                 }}
                 """
                 model = genai.GenerativeModel("gemini-1.5-flash", generation_config={"response_mime_type": "application/json"})
@@ -213,11 +213,11 @@ def generar_diagnostico_ia(muestra_json, stats_json, columnas):
             pass
     
     return {
-        "titulo_contextual": "MONITOREO AGRÍCOLA Y RENDIMIENTO OPERATIVO",
-        "resumen_gerencial": "Trazabilidad semanal y jerarquía de embalaje consolidadas exitosamente.",
+        "titulo_contextual": "MONITOREO DE TRAZABILIDAD Y COSECHA BANANERA",
+        "resumen_gerencial": "Evaluación táctica de volumen acumulado por rango de semanas e intensidad de enfunde.",
         "cuellos_de_botella": [
-            "Atención: Evaluar la variación de cajas convertidas frente al embolse por semana.",
-            "Recomendación: Monitorear el ratio de merma comparado contra la cinta activa."
+            "Atención: Evaluar la estabilidad del volumen en las semanas de mayor presión de corte.",
+            "Recomendación: Comparar la tasa de conversión por hectárea en la ventana de tiempo seleccionada."
         ]
     }
 
@@ -336,7 +336,7 @@ def ejecutar(df_base, fuente_activa=None):
                     arbol_4_niveles[s1][s2][s3] = {}
                 arbol_4_niveles[s1][s2][s3][s4] = col
 
-            # 3. DETECCIÓN AUTOMÁTICA DEL EJE X (SEMANA / CINTA)
+            # 3. DETECCIÓN AUTOMÁTICA DEL EJE OPERATIVO (SEMANA / CINTA)
             col_eje_x = None
             for c in df_norm.columns:
                 c_low = c.lower()
@@ -347,13 +347,22 @@ def ejecutar(df_base, fuente_activa=None):
                 cols_cat = [c for c, t in semantica.items() if t in ("categoria", "texto")]
                 col_eje_x = cols_cat[0] if cols_cat else df_norm.columns[0]
 
-            semanas_unicas = ["TODAS"]
+            # 4. EXTRAER Y ORDENAR LAS SEMANAS NUMÉRICAMENTE PARA EL RANGO
+            semanas_lista = []
             if col_eje_x in df_norm.columns:
-                vals_sem = df_norm[col_eje_x].dropna().astype(str).unique().tolist()
-                semanas_unicas += sorted([v for v in vals_sem if v.strip() != ""])
+                for val in df_norm[col_eje_x].dropna().unique():
+                    try:
+                        num = float(str(val).replace(".0", "").strip())
+                        semanas_lista.append(num)
+                    except ValueError:
+                        pass
+            
+            semanas_lista = sorted(list(set(semanas_lista)))
+            if not semanas_lista:
+                semanas_lista = [1.0, 52.0]
 
-            # 4. SELECTORES CON NOMENCLATURA SIMPLIFICADA (SEGMENTO 1 AL 4)
-            c_s1, c_s2, c_s3, c_s4, c_sem = st.columns([1.1, 1.1, 1.3, 0.8, 1.0])
+            # 5. SELECTORES EN CASCADA CON RANGO TEMPORAL (SEMANA INICIAL Y FINAL)
+            c_s1, c_s2, c_s3, c_s4, c_s_ini, c_s_fin = st.columns([1.0, 1.0, 1.2, 0.8, 0.9, 0.9])
             
             s1_disp = list(arbol_4_niveles.keys())
             s1_sel = c_s1.selectbox("Segmento 1:", s1_disp)
@@ -367,20 +376,45 @@ def ejecutar(df_base, fuente_activa=None):
             s4_disp = list(arbol_4_niveles[s1_sel][s2_sel][s3_sel].keys())
             s4_sel = c_s4.selectbox("Segmento 4 (Año):", s4_disp)
 
-            sem_sel = c_sem.selectbox("Filtro Semana:", semanas_unicas)
+            # Rango de Semanas
+            min_sem = min(semanas_lista)
+            max_sem = max(semanas_lista)
+            
+            sem_inicial = c_s_ini.selectbox("Semana Inicial:", semanas_lista, index=0)
+            
+            # La semana final se ajusta por defecto al máximo del rango
+            idx_max = len(semanas_lista) - 1 if len(semanas_lista) > 0 else 0
+            sem_final = c_s_fin.selectbox("Semana Final:", semanas_lista, index=idx_max)
 
             col_target = arbol_4_niveles[s1_sel][s2_sel][s3_sel][s4_sel]
 
-            # 5. RENDERIZADO DEL GRÁFICO Y FORMATO LIMPIO DE DECIMALES EN HOVER/BARRA
+            # 6. FILTRADO POR RANGO TEMPORAL DE SEMANAS
             df_g_base = df_norm.copy()
-            if sem_sel != "TODAS":
-                df_g_base = df_g_base[df_g_base[col_eje_x].astype(str) == str(sem_sel)]
+            if col_eje_x in df_g_base.columns:
+                def dentro_de_rango(val):
+                    try:
+                        n = float(str(val).replace(".0", "").strip())
+                        return sem_inicial <= n <= sem_final
+                    except ValueError:
+                        return True
+                df_g_base = df_g_base[df_g_base[col_eje_x].apply(dentro_de_rango)]
 
-            df_g = df_g_base.groupby(col_eje_x)[col_target].sum().reset_index(name='Valor').sort_values('Valor', ascending=False).head(20)
+            # Agrupación y ordenamiento por semana
+            df_g = df_g_base.groupby(col_eje_x)[col_target].sum().reset_index(name='Valor')
+            
+            # Conversión auxiliar para ordenar secuencialmente las barras
+            def clave_orden(x):
+                try:
+                    return float(str(x).replace(".0", "").strip())
+                except ValueError:
+                    return 0.0
+            
+            df_g['Orden_Temp'] = df_g[col_eje_x].apply(clave_orden)
+            df_g = df_g.sort_values('Orden_Temp', ascending=True).drop(columns=['Orden_Temp'])
 
-            # Redondeo previo para eliminar basura de flotantes en Python
             df_g['Valor_Display'] = df_g['Valor'].apply(lambda v: round(v, 1) if pd.notna(v) else 0)
 
+            # 7. RENDERIZADO DEL GRÁFICO SECUENCIAL PLOTLY
             fig = px.bar(
                 df_g, 
                 x=col_eje_x, 
@@ -393,7 +427,6 @@ def ejecutar(df_base, fuente_activa=None):
 
             unidad_fmt = "$" if semantica.get(col_target) == "moneda" else ""
             
-            # Formato de etiqueta sobre la barra y tooltip flotante (Hover) estético
             fig.update_traces(
                 texttemplate=f'{unidad_fmt}%{{text:,.1f}}', 
                 textposition='outside',
@@ -404,8 +437,7 @@ def ejecutar(df_base, fuente_activa=None):
             )
             
             titulo_grafico = f"{s2_sel.upper()} ➔ {s3_sel.upper()} ({s4_sel})" if s1_sel != "General" else col_target.upper()
-            if sem_sel != "TODAS":
-                titulo_grafico += f" - SEMANA {sem_sel}"
+            titulo_grafico += f" [SEMANA {int(sem_inicial)} A {int(sem_final)}]"
 
             label_x_limpio = col_eje_x.split(" | ")[-1] if " | " in col_eje_x else col_eje_x
             fig.update_layout(
@@ -415,7 +447,11 @@ def ejecutar(df_base, fuente_activa=None):
                 ),
                 paper_bgcolor='rgba(11, 15, 25, 0)',
                 plot_bgcolor='rgba(15, 23, 42, 0.5)',
-                xaxis=dict(title=dict(text=f"Eje Operativo: {label_x_limpio}", font=dict(color='#94a3b8')), tickfont=dict(color='#cbd5e1')),
+                xaxis=dict(
+                    title=dict(text=f"Eje Operativo: {label_x_limpio}", font=dict(color='#94a3b8')), 
+                    tickfont=dict(color='#cbd5e1'),
+                    type='category' # Forzar orden secuencial de categorías
+                ),
                 yaxis=dict(title=dict(text="Volumen / Unidad", font=dict(color='#94a3b8')), tickfont=dict(color='#cbd5e1')),
                 coloraxis_showscale=False,
                 hoverlabel=dict(
