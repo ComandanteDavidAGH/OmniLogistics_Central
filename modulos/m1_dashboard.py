@@ -1,8 +1,7 @@
 """
-MOTOR UNIVERSAL INTELIGENTE DE DATOS (ENTERPRISE FINAL B2B)
-===========================================================
-Arquitectura con Desacoplamiento Temporal, Filtros Dinámicos,
-KPIs Contextuales y Motor Analítico Génesis IA.
+MOTOR UNIVERSAL INTELIGENTE DE DATOS (CASCADA JERÁRQUICA B2B)
+=============================================================
+Arquitectura con Selección Dinámica Padre-Hijo-Año y Fallback Universal.
 """
 import io
 import json
@@ -112,7 +111,6 @@ def cazador_de_encabezados(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
 
     df_final = df_search.iloc[data_idx:].copy()
     
-    # Desduplicado Nativo Python
     cols_unicas = []
     conteo = {}
     for col in nuevas_cols:
@@ -180,11 +178,11 @@ def generar_diagnostico_ia(muestra_json, stats_json, columnas):
                 Muestra Operativa: {muestra_json}
                 Resumen Estadístico: {stats_json}
                 
-                Responde en JSON con:
+                Responde estrictamente en JSON:
                 {{
-                    "titulo_contextual": "Título Gerencial (Ej: AUDITORÍA DE PRODUCCIÓN BANANERA)",
-                    "resumen_gerencial": "Análisis táctico de rendimiento de 2 oraciones.",
-                    "cuellos_de_botella": ["Alerta de variación o volumen de producción 1", "Riesgo de rendimiento 2"]
+                    "titulo_contextual": "Título Gerencial (Ej: AUDITORÍA DE PRODUCCIÓN Y LOGÍSTICA)",
+                    "resumen_gerencial": "Análisis táctico de rendimiento en 2 oraciones.",
+                    "cuellos_de_botella": ["Alerta o variabilidad detectada 1", "Recomendación operativa 2"]
                 }}
                 """
                 model = genai.GenerativeModel("gemini-1.5-flash", generation_config={"response_mime_type": "application/json"})
@@ -193,13 +191,12 @@ def generar_diagnostico_ia(muestra_json, stats_json, columnas):
                 return json.loads(respuesta)
         except Exception: pass
     
-    # Diagnóstico Fallback Inteligente (Local)
     return {
-        "titulo_contextual": "DIAGNÓSTICO TÁCTICO DE PRODUCCIÓN Y OPERACIONES",
-        "resumen_gerencial": "El sistema ha consolidado la matriz multi-temporal. Se detectan variaciones significativas de volumen entre los ciclos evaluados que requieren control por semana de empaque.",
+        "titulo_contextual": "DIAGNÓSTICO TÁCTICO DE OPERACIONES",
+        "resumen_gerencial": "Estructura jerárquica procesada con éxito. Se detectan patrones operativos y métricas de rendimiento consolidadas para análisis de decisiones.",
         "cuellos_de_botella": [
-            "Atención: Monitorear el comportamiento de las semanas iniciales con menor volumen registrado.",
-            "Recomendación: Validar la conversión por hectárea comparando los promedios del histórico disponible."
+            "Atención: Supervisar variaciones de volumen en periodos de transición.",
+            "Recomendación: Comparar promedios históricos contra la proyección del año activo."
         ]
     }
 
@@ -238,7 +235,6 @@ def ejecutar(df_base, fuente_activa=None):
     st.markdown(f"<div class='title-bar'>⚡ {titulo}</div>", unsafe_allow_html=True)
     st.markdown(f"<div class='source-badge'>📄 ORIGEN DE DATOS: {origen_etiqueta}</div>", unsafe_allow_html=True)
 
-    # Tarjeta de Diagnóstico IA Gerencial
     alerts = "".join([f"<div class='ia-alert'>⚠️ {alerta}</div>" for alerta in diagnostico.get("cuellos_de_botella", [])])
     st.markdown(
         f"""
@@ -265,7 +261,6 @@ def ejecutar(df_base, fuente_activa=None):
                 val_total = df_norm[col].sum()
                 formato = f"${fmt_es(val_total)}" if semantica[col] == "moneda" else fmt_es(val_total, decimales_sugeridos(df_norm[col]))
                 
-                # Nombre limpio sin el año para la tarjeta
                 partes = [p.strip() for p in col.split(" | ")]
                 nombre_kpi = " - ".join(partes[:-1]) if len(partes) > 1 and re.match(r'^\d{4}$', partes[-1]) else col
                 
@@ -282,47 +277,59 @@ def ejecutar(df_base, fuente_activa=None):
             
             st.markdown("<br><hr style='border-color: #1e293b;'><br>", unsafe_allow_html=True)
 
-            # 2. CONSTRUCCIÓN DE CONCEPTOS LÓGICOS (MAPEO DE AÑOS vs CONCEPTOS)
-            anios_detectados = sorted(list(set(re.findall(r'\b20\d{2}\b', " ".join(df_norm.columns)))))
-            
-            # Mapeamos columnas agrupando por su concepto puro (ignorando el año final)
-            mapa_conceptos = {}
+            # ==============================================================================
+            # 2. CONSTRUCCIÓN DE LA ARBOLESCENCIA CASCADA (PADRE ➔ HIJO ➔ AÑO) CON FALLBACK
+            # ==============================================================================
+            arbol_jerarquico = {}
             for col in cols_num:
                 partes = [p.strip() for p in col.split(" | ")]
-                if len(partes) > 1 and re.match(r'^\d{4}$', partes[-1]):
-                    concepto = " | ".join(partes[:-1])
-                    anio = partes[-1]
+                
+                if len(partes) >= 3:
+                    padre = partes[0]
+                    hijo = partes[1]
+                    anio = partes[-1] if re.match(r'^\d{4}$', partes[-1]) else "General"
+                elif len(partes) == 2:
+                    padre = partes[0]
+                    if re.match(r'^\d{4}$', partes[1]):
+                        hijo = partes[0]
+                        anio = partes[1]
+                    else:
+                        hijo = partes[1]
+                        anio = "General"
                 else:
-                    concepto = col
+                    # Fallback para archivos planos / CSVs estándar
+                    padre = "Métricas Principales"
+                    hijo = col
                     anio = "General"
                 
-                if concepto not in mapa_conceptos:
-                    mapa_conceptos[concepto] = {}
-                mapa_conceptos[concepto][anio] = col
+                if padre not in arbol_jerarquico:
+                    arbol_jerarquico[padre] = {}
+                if hijo not in arbol_jerarquico[padre]:
+                    arbol_jerarquico[padre][hijo] = {}
+                arbol_jerarquico[padre][hijo][anio] = col
 
-            c_sec1, c_sec2, c_sec3 = st.columns([1.5, 1.5, 1])
-            
-            # Selectores Desacoplados
+            # 3. SELECTORES DINÁMICOS EN CASCADA
             cols_categoricas = [c for c, t in semantica.items() if t in ("categoria", "texto")]
-            eje_x = c_sec1.selectbox("Eje Principal (Segmento / Categoría):", cols_categoricas if cols_categoricas else df_norm.columns)
+            c_eje_x, c_padre, c_hijo, c_anio = st.columns([1.2, 1.2, 1.4, 0.8])
             
-            concepto_seleccionado = c_sec2.selectbox("Métrica / Concepto Gerencial:", list(mapa_conceptos.keys()))
+            eje_x = c_eje_x.selectbox("Eje Principal (Segmento):", cols_categoricas if cols_categoricas else df_norm.columns)
             
-            anio_filtro = "TODOS"
-            if anios_detectados:
-                anio_filtro = c_sec3.selectbox("Filtro Temporal (Año):", anios_detectados)
+            # Selector 1: Padre Maestro
+            padres_disponibles = list(arbol_jerarquico.keys())
+            padre_sel = c_padre.selectbox("Módulo Padre:", padres_disponibles)
+            
+            # Selector 2: Hijo Directo (FILTRADO DINÁMICAMENTE POR EL PADRE SELECCIONADO)
+            hijos_disponibles = list(arbol_jerarquico[padre_sel].keys())
+            hijo_sel = c_hijo.selectbox("Métrica / Sub-Variable:", hijos_disponibles)
+            
+            # Selector 3: Año / Temporal (FILTRADO DINÁMICAMENTE POR EL HIJO SELECCIONADO)
+            anios_disponibles = list(arbol_jerarquico[padre_sel][hijo_sel].keys())
+            anio_sel = c_anio.selectbox("Año:", anios_disponibles)
 
-            # 3. RESOLUCIÓN DE LA COLUMNA EXPOSICIÓN Y GRÁFICO (CERO ERROR KEYERROR)
-            col_target = None
-            dict_anios_concepto = mapa_conceptos.get(concepto_seleccionado, {})
-            
-            if anio_filtro in dict_anios_concepto:
-                col_target = dict_anios_concepto[anio_filtro]
-            else:
-                # Si el año seleccionado no aplica para ese concepto, tomamos el primer año disponible
-                col_target = list(dict_anios_concepto.values())[0]
+            # Columna objetivo final
+            col_target = arbol_jerarquico[padre_sel][hijo_sel][anio_sel]
 
-            # Renderizado del Gráfico
+            # 4. RENDERIZADO DEL GRÁFICO (PLOTLY CYBERPUNK)
             df_g = df_norm.groupby(eje_x)[col_target].sum().reset_index(name='Valor').sort_values('Valor', ascending=False).head(15)
 
             fig = px.bar(
@@ -344,9 +351,10 @@ def ejecutar(df_base, fuente_activa=None):
                 opacity=0.9
             )
             
+            titulo_grafico = f"{padre_sel.upper()} ➔ {hijo_sel.upper()} ({anio_sel})" if padre_sel != "Métricas Principales" else col_target.upper()
             fig.update_layout(
                 title=dict(
-                    text=f"COMPARATIVA: {concepto_seleccionado.upper()} ({anio_filtro})",
+                    text=f"COMPARATIVA: {titulo_grafico}",
                     font=dict(family='Orbitron', size=15, color='#38bdf8')
                 ),
                 paper_bgcolor='rgba(11, 15, 25, 0)',
