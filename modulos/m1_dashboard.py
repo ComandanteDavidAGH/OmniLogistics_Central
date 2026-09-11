@@ -287,6 +287,11 @@ def ejecutar(df_base, fuente_activa=None):
     tab_dash, tab_datos = st.tabs(["🚀 COMMAND CENTER (DASHBOARD)", "🗄️ BOVEDA DE DATOS NORMALIZADA"])
 
     with tab_dash:
+        # Validación de seguridad contra DataFrames vacíos o sin columnas
+        if df_norm.empty or len(df_norm.columns) == 0:
+            st.warning("⚠️ No se detectaron columnas con información procesable en el archivo cargado. Verifica el formato del Excel.")
+            st.stop()
+
         cols_num = [c for c, t in semantica.items() if t in ("cantidad", "moneda", "porcentaje")]
         
         # EJE X RESTREÑIDO EXCLUSIVAMENTE A VARIABLES CATEGÓRICAS / DIMENSIONES
@@ -294,7 +299,7 @@ def ejecutar(df_base, fuente_activa=None):
         if not cols_eje_x:
             cols_eje_x = [c for c in df_norm.columns if c not in cols_num]
         if not cols_eje_x:
-            cols_eje_x = [df_norm.columns[0]]
+            cols_eje_x = list(df_norm.columns[:1])  # Asignación segura de lista sin IndexError
 
         # TARJETAS KPIS: EXCLUIR COLUMNAS DE SEMANA/CINTA
         kpi_metrics = [c for c in cols_num if not any(p in c.lower() for p in ("semana", "cinta", "codigo", "id", "nit"))]
