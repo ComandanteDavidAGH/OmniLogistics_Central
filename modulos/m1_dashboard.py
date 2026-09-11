@@ -126,12 +126,22 @@ def cazador_de_encabezados(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
         nuevas_cols.append(nombre_final)
 
     df_final = df_search.iloc[data_idx:].copy()
-    s = pd.Series(nuevas_cols)
-    df_final.columns = s.where(~s.duplicated(), s + ' (' + s.groupby(s).cumcount().astype(str) + ')')
     
+    # --- DESDUPLICACIÓN NATIVA EN PYTHON (Sin PyArrow / Pandas __add__ bug) ---
+    cols_unicas = []
+    conteo = {}
+    for col in nuevas_cols:
+        col_str = str(col)
+        if col_str in conteo:
+            conteo[col_str] += 1
+            cols_unicas.append(f"{col_str} ({conteo[col_str]})")
+        else:
+            conteo[col_str] = 0
+            cols_unicas.append(col_str)
+            
+    df_final.columns = cols_unicas
     df_final = df_final.dropna(how='all', axis=0).dropna(how='all', axis=1)
     return df_final.reset_index(drop=True), origen_etiqueta
-
 @st.cache_data(show_spinner=False)
 def normalizar_datos(df_raw: pd.DataFrame) -> Dict[str, Any]:
     df, etiqueta_origen = cazador_de_encabezados(df_raw)
