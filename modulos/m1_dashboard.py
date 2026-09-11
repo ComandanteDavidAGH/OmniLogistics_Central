@@ -1,10 +1,8 @@
 """
-MOTOR B2B (PRUEBA DE CIMIENTOS - MATRIZ PURA)
+MOTOR B2B (PRUEBA DE CIMIENTOS ESTRICTA - 12 COLUMNAS)
 ========================================================================
-- Objetivo: Validar la extracción lógica sin gráficos ni ruido.
-- Algoritmo: Encuentra el Ecuador, Hereda horizontalmente y Concatena verticalmente.
-- Exterminador: Elimina filas de totales o subtotales intrusos.
-- Salida: Tabla estricta de las primeras 12 columnas.
+- Objetivo: Validar la extracción lógica estricta sin margen de error.
+- Corte: Se fuerza el dataframe a exactamente 12 columnas.
 """
 import re
 import pandas as pd
@@ -15,22 +13,25 @@ from typing import Tuple
 VALORES_NULOS = {"none", "nan", "nat", "null", "n/a", "#n/a", "-", "--", ""}
 
 def extractor_logico_universal(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
-    """El cerebro estructural: Extrae la matriz pura usando comportamiento, no adivinanzas."""
     origen = "Archivo Base"
     if "_Origen_Archivo" in df_raw.columns:
         origen = str(df_raw["_Origen_Archivo"].dropna().iloc[0]) if not df_raw["_Origen_Archivo"].dropna().empty else origen
         df_raw = df_raw.drop(columns=["_Origen_Archivo"])
 
-    # Paso 1: Buscar la fila Ecuador (Donde nacen las dimensiones)
+    # =========================================================
+    # CORTE ESTRICTO Y ABSOLUTO A LAS PRIMERAS 12 COLUMNAS
+    # =========================================================
+    df_raw = df_raw.iloc[:, :12].copy()
+
+    # Paso 1: Buscar la fila Ecuador (Línea de flotación operativa)
     fila_eje = 0
     for i in range(min(20, len(df_raw))):
         text_row = " ".join([str(x).lower() for x in df_raw.iloc[i] if pd.notna(x)])
-        # Palabras ancla universales de inicio de datos
         if any(w in text_row for w in ['semana', 'cinta', 'categoría', 'producto', 'fecha', 'código']):
             fila_eje = i
             break
 
-    # Paso 2: Determinar fin de encabezados (Si abajo del Ecuador hay Años, incluye esa fila)
+    # Paso 2: Determinar fin de encabezados (buscando años en la fila de abajo)
     fin_encabezados = fila_eje
     if fila_eje + 1 < len(df_raw):
         vals = [str(x).replace('.0','') for x in df_raw.iloc[fila_eje + 1] if pd.notna(x)]
@@ -54,14 +55,12 @@ def extractor_logico_universal(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]
             if pd.notna(val) and str(val).strip() != "" and str(val).lower() != 'nan':
                 texto = str(val).replace('.0', '').strip()
                 
-                # Omitir basura o títulos corporativos gigantes
+                # Ignorar basura
                 if len(texto) > 40: continue 
-                # Omitir subtextos repetitivos como "2023-2024-2025"
                 texto = re.sub(r'\b20\d{2}(?:\s*-\s*20\d{2})+\b', '', texto).strip('- ')
-                texto = " ".join(texto.split()) # Quitar espacios dobles
+                texto = " ".join(texto.split())
                 
                 texto_format = texto.title() if not texto.isdigit() else texto
-                # Agregar si no es duplicado del nivel anterior
                 if texto_format and (not jerarquia or jerarquia[-1].lower() != texto_format.lower()):
                     jerarquia.append(texto_format)
                     
@@ -71,7 +70,6 @@ def extractor_logico_universal(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]
     # Asignar Linaje al DataFrame de Datos
     df_datos = df_raw.iloc[ecuador_datos:].copy()
     
-    # Manejar posibles duplicados en nombres
     cols_unicas, conteo = [], {}
     for col in nuevas_cols:
         if col in conteo:
@@ -87,14 +85,13 @@ def extractor_logico_universal(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]
     mask = pd.Series([True] * len(df_datos), index=df_datos.index)
     for col in df_datos.columns[:3]:
         if df_datos[col].dtype == 'object':
-            # Detectar y destruir filas intrusas
             filtro = df_datos[col].astype(str).str.lower().str.contains(r'total|promedio|acumulado|año\b|ano\b|sem\b|sem\d', regex=True, na=False)
             mask = mask & (~filtro)
             
     df_datos = df_datos[mask].reset_index(drop=True)
     df_datos = df_datos.dropna(how='all', axis=0)
 
-    # Autotipado
+    # Autotipado numérico
     for col in df_datos.columns:
         df_datos[col] = df_datos[col].map(lambda v: np.nan if str(v).lower().strip() in VALORES_NULOS else v)
         serie_str = df_datos[col].dropna().astype(str).str.replace(r"[$\s%]", "", regex=True).str.replace(",", ".")
@@ -118,12 +115,12 @@ def ejecutar(df_base, fuente_activa=None):
     inyectar_css()
 
     if df_base is None or df_base.empty:
-        st.markdown("<div class='title-bar'>MODO DE PRUEBA: EXTRACCIÓN DE CIMIENTOS</div>", unsafe_allow_html=True)
+        st.markdown("<div class='title-bar'>MODO ESTRICTO: 12 COLUMNAS</div>", unsafe_allow_html=True)
         st.markdown("""
-        <div style='background: #111827; border-left: 4px solid #3b82f6; padding: 40px; border-radius: 8px; margin-top: 20px; text-align: center;'>
-            <h2 style='color: #f3f4f6; font-family: Orbitron; margin-bottom: 15px;'>ESPERANDO MATRIZ DE DATOS</h2>
+        <div style='background: #111827; border-left: 4px solid #f43f5e; padding: 40px; border-radius: 8px; margin-top: 20px; text-align: center;'>
+            <h2 style='color: #f3f4f6; font-family: Orbitron; margin-bottom: 15px;'>ESPERANDO ARCHIVO</h2>
             <p style='color: #9ca3af; font-family: Rajdhani; font-size: 18px; line-height: 1.6;'>
-                Sube el archivo Excel. El sistema extraerá y purificará estrictamente las primeras 12 columnas.
+                Sube tu matriz. El sistema bloqueará todo lo que pase de la columna 12.
             </p>
         </div>
         """, unsafe_allow_html=True)
@@ -133,25 +130,21 @@ def ejecutar(df_base, fuente_activa=None):
         st.session_state["ultima_fuente"] = fuente_activa
         st.cache_data.clear()
 
-    with st.spinner("Procesando Lógica de Cimientos (Cero Gráficos)..."):
-        # Extraemos solo las 12 primeras columnas para la prueba de estrés
-        df_recortado = df_base.iloc[:, :12].copy()
-        
-        df_norm, origen = extractor_logico_universal(df_recortado)
+    with st.spinner("Procesando Cimientos..."):
+        df_norm, origen = extractor_logico_universal(df_base)
         
         if df_norm.empty:
-            st.error("⚠️ El archivo no pasó la prueba de extracción. Quedó vacío.")
+            st.error("⚠️ El archivo quedó vacío tras la extracción.")
             st.stop()
 
-    st.markdown("<div class='title-bar'>PRUEBA SUPERADA: MATRIZ DE DATOS PURA (12 COLUMNAS)</div>", unsafe_allow_html=True)
+    st.markdown("<div class='title-bar'>MATRIZ DE DATOS PURA (12 COLUMNAS EXACTAS)</div>", unsafe_allow_html=True)
     st.markdown(f"<div class='source-badge'>📁 ARCHIVO: {origen}</div>", unsafe_allow_html=True)
     
-    st.info("📌 Inspeccione detenidamente los encabezados construidos por herencia y la ausencia de totales basura en las cintas.")
+    st.info("📌 Revisa detenidamente: ¿Están bien armados los encabezados por herencia? ¿Están limpias las filas de las cintas?")
 
-    # Renderizamos la tabla pura con todos sus bordes y limpieza
     st.dataframe(
         df_norm, 
         use_container_width=True, 
         hide_index=True, 
-        height=600
+        height=650
     )
