@@ -1,7 +1,8 @@
 """
-MOTOR UNIVERSAL INTELIGENTE DE DATOS (ARBOLESCENCIA DE 4 NIVELES)
-================================================================
-Navegación Dinámica: Segmento Principal ➔ Padre ➔ Hijo (Condición) ➔ Año
+MOTOR UNIVERSAL INTELIGENTE DE DATOS (EDICIÓN AGRÍCOLA / BANANO B2B)
+=====================================================================
+Arquitectura con Selección Automática de Eje Semana/Cinta,
+Filtro de Semanas (1-52) y Jerarquía Simplificada Segmentos 1 al 4.
 """
 import io
 import json
@@ -172,7 +173,7 @@ def generar_diagnostico_ia(muestra_json, stats_json, columnas):
             if api_key:
                 genai.configure(api_key=api_key)
                 prompt = f"""
-                Eres Génesis IA, motor analítico B2B.
+                Eres Génesis IA, motor de inteligencia agrícola y logística B2B especializado en cultivos de banano y frutas.
                 Analiza esta estructura:
                 Columnas: {columnas}
                 Muestra: {muestra_json}
@@ -180,215 +181,11 @@ def generar_diagnostico_ia(muestra_json, stats_json, columnas):
                 
                 Responde en JSON:
                 {{
-                    "titulo_contextual": "AUDITORÍA TÁCTICA DE PRODUCCIÓN",
-                    "resumen_gerencial": "Evaluación gerencial en 2 oraciones.",
-                    "cuellos_de_botella": ["Alerta o variabilidad 1", "Recomendación 2"]
+                    "titulo_contextual": "MONITOREO AGRÍCOLA Y RENDIMIENTO BANANERO",
+                    "resumen_gerencial": "Análisis táctico de embolse, cajas procesadas y merma por semana de empaque.",
+                    "cuellos_de_botella": ["Desviación de volumen en semanas de cinta crítica", "Control de ratio de conversión por hectárea"]
                 }}
                 """
                 model = genai.GenerativeModel("gemini-1.5-flash", generation_config={"response_mime_type": "application/json"})
                 respuesta = model.generate_content(prompt).text.strip()
-                if "```json" in respuesta: respuesta = respuesta.split("```json")[1].split("```")[0].strip()
-                return json.loads(respuesta)
-        except Exception: pass
-    
-    return {
-        "titulo_contextual": "DIAGNÓSTICO TÁCTICO DE OPERACIONES",
-        "resumen_gerencial": "Estructura jerárquica procesada con éxito. Matriz consolidada por segmentos, módulos y condiciones anuales.",
-        "cuellos_de_botella": [
-            "Atención: Monitorear variaciones en el volumen de semanas críticas.",
-            "Recomendación: Comparar rendimientos por hectárea entre ciclos históricos."
-        ]
-    }
-
-def inyectar_css():
-    st.markdown('''
-    <style>
-        @import url('[https://fonts.googleapis.com/css2?family=Orbitron:wght@500;800;900&family=Rajdhani:wght@500;600;700&display=swap](https://fonts.googleapis.com/css2?family=Orbitron:wght@500;800;900&family=Rajdhani:wght@500;600;700&display=swap)');
-        .main { background-color: #0b0f19; }
-        .title-bar { color: #38bdf8; font-family: 'Orbitron', sans-serif; font-size: 24px; font-weight: 800; border-bottom: 2px solid #1e293b; padding-bottom: 12px; margin-bottom: 20px; } 
-        .source-badge { display: inline-block; background: rgba(15, 23, 42, 0.8); border: 1px solid #38bdf8; color: #38bdf8; padding: 4px 12px; border-radius: 20px; font-family: 'Rajdhani', sans-serif; font-size: 13px; font-weight: 700; margin-bottom: 18px; }
-        .ia-card { background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.8)); border-left: 5px solid #10b981; padding: 22px; border-radius: 12px; margin-bottom: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); } 
-        .ia-title { color: #10b981; font-family: 'Orbitron', sans-serif; font-size: 14px; font-weight: 800; margin-bottom: 10px; } 
-        .ia-summary { color: #e2e8f0; font-family: 'Rajdhani', sans-serif; font-size: 17px; font-weight: 500; line-height: 1.5; margin-bottom: 12px; } 
-        .ia-alert { color: #fb7185; font-family: 'Rajdhani', sans-serif; font-size: 15px; font-weight: 700; margin-top: 6px; padding-left: 10px; border-left: 3px solid #fb7185; } 
-        .kpi-card { background: rgba(15, 23, 42, 0.75); padding: 18px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.08); border-top: 3px solid #06b6d4; }
-        .kpi-title { font-family: 'Rajdhani', sans-serif; font-size: 13px; color: #94a3b8; font-weight: 700; text-transform: uppercase; } 
-        .kpi-val { font-family: 'Orbitron', sans-serif; font-size: 22px; color: #f8fafc; font-weight: 800; margin-top: 6px; }
-    </style>
-    ''', unsafe_allow_html=True)
-
-def ejecutar(df_base, fuente_activa=None):
-    inyectar_css()
-    
-    with st.spinner("Decodificando topografía y sincronizando Inteligencia artificial..."):
-        res = normalizar_datos(df_base)
-        df_norm = res["df_norm"]
-        origen_etiqueta = res["origen"]
-        semantica = inferir_semantica(df_norm)
-
-    try: stats_json = df_norm.describe().to_json()
-    except Exception: stats_json = "{}"
-        
-    diagnostico = generar_diagnostico_ia(df_norm.head(3).to_json(date_format="iso"), stats_json, list(df_norm.columns))
-    
-    titulo = diagnostico.get("titulo_contextual", "SISTEMA OPERATIVO DE DATOS B2B")
-    st.markdown(f"<div class='title-bar'>⚡ {titulo}</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='source-badge'>📄 ORIGEN DE DATOS: {origen_etiqueta}</div>", unsafe_allow_html=True)
-
-    alerts = "".join([f"<div class='ia-alert'>⚠️ {alerta}</div>" for alerta in diagnostico.get("cuellos_de_botella", [])])
-    st.markdown(
-        f"""
-        <div class='ia-card'>
-            <div class='ia-title'>🤖 DIAGNÓSTICO TÁCTICO (GÉNESIS IA)</div>
-            <div class='ia-summary'>{diagnostico.get('resumen_gerencial', '')}</div>
-            <div>{alerts}</div>
-        </div>
-        """, 
-        unsafe_allow_html=True
-    )
-
-    tab_dash, tab_datos = st.tabs(["🚀 COMMAND CENTER (DASHBOARD)", "🗄️ BÓVEDA DE DATOS NORMALIZADA"])
-
-    with tab_dash:
-        cols_num = [c for c, t in semantica.items() if t in ("cantidad", "moneda", "porcentaje")]
-        
-        if not cols_num:
-            st.warning("No se detectaron variables numéricas para generar analítica.")
-        else:
-            # 1. TARJETAS KPI FUTURISTAS
-            kpi_cols = st.columns(min(4, len(cols_num)))
-            for i, col in enumerate(cols_num[:4]):
-                val_total = df_norm[col].sum()
-                formato = f"${fmt_es(val_total)}" if semantica[col] == "moneda" else fmt_es(val_total, decimales_sugeridos(df_norm[col]))
-                
-                partes = [p.strip() for p in col.split(" | ")]
-                nombre_kpi = " - ".join(partes[:-1]) if len(partes) > 1 and re.match(r'^\d{4}$', partes[-1]) else col
-                
-                with kpi_cols[i]:
-                    st.markdown(
-                        f"""
-                        <div class='kpi-card'>
-                            <div class='kpi-title'>{nombre_kpi[:30]}</div>
-                            <div class='kpi-val'>{formato}</div>
-                        </div>
-                        """, 
-                        unsafe_allow_html=True
-                    )
-            
-            st.markdown("<br><hr style='border-color: #1e293b;'><br>", unsafe_allow_html=True)
-
-            # ==============================================================================
-            # 2. CONSTRUCCIÓN DE ARBOLESCENCIA COMPLETA DE 4 NIVELES
-            # ==============================================================================
-            arbol_4_niveles = {}
-            for col in cols_num:
-                partes = [p.strip() for p in col.split(" | ")]
-                
-                if len(partes) >= 4:
-                    segmento = partes[0]                           # Ej: PLANTAS
-                    padre = partes[1]                              # Ej: EMBOLSE
-                    hijo = partes[-2]                              # Ej: ACUMULADO EMBOLSE / POR HECTAREA
-                    anio = partes[-1] if re.match(r'^\d{4}$', partes[-1]) else "General"
-                elif len(partes) == 3:
-                    segmento = partes[0]
-                    padre = partes[0]
-                    hijo = partes[1]
-                    anio = partes[2] if re.match(r'^\d{4}$', partes[2]) else "General"
-                elif len(partes) == 2:
-                    segmento = "General"
-                    padre = partes[0]
-                    hijo = partes[0] if re.match(r'^\d{4}$', partes[1]) else partes[1]
-                    anio = partes[1] if re.match(r'^\d{4}$', partes[1]) else "General"
-                else:
-                    segmento = "General"
-                    padre = "General"
-                    hijo = col
-                    anio = "General"
-                
-                if segmento not in arbol_4_niveles: arbol_4_niveles[segmento] = {}
-                if padre not in arbol_4_niveles[segmento]: arbol_4_niveles[segmento][padre] = {}
-                if hijo not in arbol_4_niveles[segmento][padre]: arbol_4_niveles[segmento][padre][hijo] = {}
-                arbol_4_niveles[segmento][padre][hijo][anio] = col
-
-            # 3. SELECTORES EN CASCADA COMPLETA (SEGMENTO ➔ PADRE ➔ HIJO ➔ AÑO)
-            cols_categoricas = [c for c, t in semantica.items() if t in ("categoria", "texto")]
-            c_eje_x, c_seg, c_padre, c_hijo, c_anio = st.columns([1.1, 1.1, 1.1, 1.3, 0.8])
-            
-            eje_x = c_eje_x.selectbox("Eje Principal:", cols_categoricas if cols_categoricas else df_norm.columns)
-            
-            # Selector 1: Segmento Principal (PLANTAS, HECTAREAS, General)
-            segmentos_disp = list(arbol_4_niveles.keys())
-            seg_sel = c_seg.selectbox("1. Segmento:", segmentos_disp)
-            
-            # Selector 2: Padre Maestro (EMBOLSE, CAJAS PRODUCCION, MERMA, etc.)
-            padres_disp = list(arbol_4_niveles[seg_sel].keys())
-            padre_sel = c_padre.selectbox("2. Padre:", padres_disp)
-            
-            # Selector 3: Condición / Hijo Penúltimo (EMBOLSE AÑOS, POR HECTAREA, CORTADA, etc.)
-            hijos_disp = list(arbol_4_niveles[seg_sel][padre_sel].keys())
-            hijo_sel = c_hijo.selectbox("3. Condición / Hijo:", hijos_disp)
-            
-            # Selector 4: Filtro Temporal (2022, 2023, 2024, 2025, 2026)
-            anios_disp = list(arbol_4_niveles[seg_sel][padre_sel][hijo_sel].keys())
-            anio_sel = c_anio.selectbox("4. Año:", anios_disp)
-
-            # Columna final seleccionada
-            col_target = arbol_4_niveles[seg_sel][padre_sel][hijo_sel][anio_sel]
-
-            # 4. RENDERIZADO DEL GRÁFICO (PLOTLY CYBERPUNK)
-            df_g = df_norm.groupby(eje_x)[col_target].sum().reset_index(name='Valor').sort_values('Valor', ascending=False).head(15)
-
-            fig = px.bar(
-                df_g, 
-                x=eje_x, 
-                y='Valor',
-                text='Valor',
-                template="plotly_dark",
-                color='Valor',
-                color_continuous_scale="Electric"
-            )
-
-            unidad_fmt = "$" if semantica.get(col_target) == "moneda" else ""
-            fig.update_traces(
-                texttemplate=f'{unidad_fmt}%{{text:,.1f}}', 
-                textposition='outside',
-                marker_line_color='#06b6d4',
-                marker_line_width=1.5,
-                opacity=0.9
-            )
-            
-            titulo_grafico = f"{padre_sel.upper()} ➔ {hijo_sel.upper()} ({anio_sel})" if seg_sel != "General" else col_target.upper()
-            fig.update_layout(
-                title=dict(
-                    text=f"COMPARATIVA: {titulo_grafico}",
-                    font=dict(family='Orbitron', size=15, color='#38bdf8')
-                ),
-                paper_bgcolor='rgba(11, 15, 25, 0)',
-                plot_bgcolor='rgba(15, 23, 42, 0.5)',
-                xaxis=dict(title=dict(text=eje_x, font=dict(color='#94a3b8')), tickfont=dict(color='#cbd5e1')),
-                yaxis=dict(title=dict(text="Volumen / Unidad", font=dict(color='#94a3b8')), tickfont=dict(color='#cbd5e1')),
-                coloraxis_showscale=False,
-                margin=dict(l=20, r=20, t=60, b=40),
-                height=460
-            )
-
-            st.plotly_chart(fig, use_container_width=True)
-
-    with tab_datos:
-        st.markdown("<h4 style='color: #38bdf8; font-family: Orbitron;'>🗄️ BÓVEDA DE DATOS OPERATIVOS NORMALIZADA</h4>", unsafe_allow_html=True)
-        df_mostrar = df_norm.copy()
-        
-        for col in df_mostrar.columns:
-            if df_mostrar[col].dtype == 'object':
-                df_mostrar[col] = df_mostrar[col].fillna("")
-        
-        config = {}
-        for col in df_mostrar.columns:
-            if semantica.get(col) == "moneda":
-                config[col] = st.column_config.NumberColumn(col, format="$ %.2f")
-            elif semantica.get(col) == "porcentaje":
-                config[col] = st.column_config.NumberColumn(col, format="%.2f%%")
-            elif semantica.get(col) == "cantidad":
-                config[col] = st.column_config.NumberColumn(col, format="localized")
-        
-        st.dataframe(df_mostrar, column_config=config, use_container_width=True, hide_index=True, height=550)
+                if "```json" in respuesta: respuesta = respuesta.split("
