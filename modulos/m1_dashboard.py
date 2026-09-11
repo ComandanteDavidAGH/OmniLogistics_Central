@@ -1,9 +1,9 @@
 """
-MOTOR UNIVERSAL INTELIGENTE DE DATOS B2B (DASHBOARD MULTI-GRÁFICO)
-==================================================================
-- Gestión de Memoria: Purga de caché automática en re-carga.
-- Diversidad Visual: Selector de tipo de gráfico (Líneas, Área, Dona, Barras).
-- Trazabilidad Operativa: CINTA y SEMANA sin decimales.
+MOTOR UNIVERSAL INTELIGENTE DE DATOS B2B (DASHBOARD BANANERO MULTI-PANEL)
+========================================================================
+- Trazabilidad Operativa: CINTA (Color) y SEMANA (Entero sin decimales 1-52).
+- Visualizacion: Panel Grid Multi-Grafico con seleccion de multiple metrica.
+- Inteligencia: Diagnostico Tactico Genesis IA.
 """
 import io
 import json
@@ -128,6 +128,7 @@ def cazador_de_encabezados(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
     df_final = df_final.dropna(how='all', axis=0).dropna(how='all', axis=1)
     return df_final.reset_index(drop=True), origen_etiqueta
 
+@st.cache_data(show_spinner=False)
 def normalizar_datos(df_raw: pd.DataFrame) -> Dict[str, Any]:
     df, etiqueta_origen = cazador_de_encabezados(df_raw)
     
@@ -214,7 +215,7 @@ def generar_diagnostico_ia(muestra_json, stats_json, columnas):
 def inyectar_css():
     st.markdown("""
     <style>
-        @import url('[https://fonts.googleapis.com/css2?family=Orbitron:wght@500;800;900&family=Rajdhani:wght@500;600;700&display=swap](https://fonts.googleapis.com/css2?family=Orbitron:wght@500;800;900&family=Rajdhani:wght@500;600;700&display=swap)');
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;800;900&family=Rajdhani:wght@500;600;700&display=swap');
         .main { background-color: #0b0f19; }
         .title-bar { color: #38bdf8; font-family: 'Orbitron', sans-serif; font-size: 24px; font-weight: 800; border-bottom: 2px solid #1e293b; padding-bottom: 12px; margin-bottom: 20px; } 
         .source-badge { display: inline-block; background: rgba(15, 23, 42, 0.8); border: 1px solid #38bdf8; color: #38bdf8; padding: 4px 12px; border-radius: 20px; font-family: 'Rajdhani', sans-serif; font-size: 13px; font-weight: 700; margin-bottom: 18px; }
@@ -222,16 +223,15 @@ def inyectar_css():
         .ia-title { color: #10b981; font-family: 'Orbitron', sans-serif; font-size: 14px; font-weight: 800; margin-bottom: 10px; } 
         .ia-summary { color: #e2e8f0; font-family: 'Rajdhani', sans-serif; font-size: 17px; font-weight: 500; line-height: 1.5; margin-bottom: 12px; } 
         .ia-alert { color: #fb7185; font-family: 'Rajdhani', sans-serif; font-size: 15px; font-weight: 700; margin-top: 6px; padding-left: 10px; border-left: 3px solid #fb7185; } 
-        .kpi-card { background: rgba(15, 23, 42, 0.75); padding: 18px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.08); border-top: 3px solid #06b6d4; }
-        .kpi-title { font-family: 'Rajdhani', sans-serif; font-size: 13px; color: #94a3b8; font-weight: 700; text-transform: uppercase; } 
-        .kpi-val { font-family: 'Orbitron', sans-serif; font-size: 22px; color: #f8fafc; font-weight: 800; margin-top: 6px; }
+        .kpi-card { background: rgba(15, 23, 42, 0.75); padding: 18px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.08); border-top: 3px solid #06b6d4; min-height: 105px; }
+        .kpi-title { font-family: 'Rajdhani', sans-serif; font-size: 12px; color: #38bdf8; font-weight: 700; text-transform: uppercase; line-height: 1.2; } 
+        .kpi-val { font-family: 'Orbitron', sans-serif; font-size: 20px; color: #f8fafc; font-weight: 800; margin-top: 8px; }
     </style>
     """, unsafe_allow_html=True)
 
 def ejecutar(df_base, fuente_activa=None):
     inyectar_css()
     
-    # CONTROL DE MEMORIA: Detectar cambio de fuente y purgar caché si es necesario
     if "ultima_fuente" not in st.session_state or st.session_state["ultima_fuente"] != fuente_activa:
         st.session_state["ultima_fuente"] = fuente_activa
         st.cache_data.clear()
@@ -271,23 +271,27 @@ def ejecutar(df_base, fuente_activa=None):
         cols_num = [c for c, t in semantica.items() if t in ("cantidad", "moneda", "porcentaje")]
         cols_dimensiones = [c for c in df_norm.columns if c not in cols_num]
         
+        # Excluir columnas descriptivas de los KPIs superiores
+        kpi_metrics = [c for c in cols_num if not any(p in c.lower() for p in ("semana", "cinta", "codigo", "id", "nit"))]
+        if not kpi_metrics:
+            kpi_metrics = cols_num
+
         if not cols_num:
             st.warning("No se detectaron variables numericas para generar analitica.")
         else:
-            # 1. TARJETAS KPI SUPERIORES
-            kpi_cols = st.columns(min(4, len(cols_num)))
-            for i, col in enumerate(cols_num[:4]):
+            # 1. TARJETAS KPI SUPERIORES CON LINAJE COMPLETO Y AÑO
+            kpi_cols = st.columns(min(4, len(kpi_metrics)))
+            for i, col in enumerate(kpi_metrics[:4]):
                 val_total = df_norm[col].sum()
                 formato = f"${fmt_es(val_total)}" if semantica[col] == "moneda" else fmt_es(val_total, 0)
                 
-                partes = [p.strip() for p in col.split(" | ")]
-                nombre_kpi = " - ".join(partes[:-1]) if len(partes) > 1 and re.match(r'^\d{4}$', partes[-1]) else col
+                nombre_kpi = col.replace(" | ", " ➔ ")
                 
                 with kpi_cols[i]:
                     st.markdown(
                         f"""
                         <div class='kpi-card'>
-                            <div class='kpi-title'>{nombre_kpi[:30]}</div>
+                            <div class='kpi-title'>{nombre_kpi}</div>
                             <div class='kpi-val'>{formato}</div>
                         </div>
                         """, 
@@ -304,7 +308,6 @@ def ejecutar(df_base, fuente_activa=None):
             eje_seleccionado = c_eje.selectbox("1. Variable de Agrupación (Eje X):", opciones_eje if opciones_eje else df_norm.columns)
             anio_sel = c_anio.selectbox("2. Filtro de Año Operativo:", anios_detectados if anios_detectados else ["General"])
             
-            # Formato predeterminado inteligente según la variable del Eje X
             default_tipo = "Dona (Distribución)" if "cinta" in eje_seleccionado.lower() else "Líneas (Tendencia)"
             tipo_grafico_global = c_tipo.selectbox(
                 "3. Estilo de Gráfico por Defecto:", 
@@ -332,6 +335,8 @@ def ejecutar(df_base, fuente_activa=None):
 
             st.markdown("<br>", unsafe_allow_html=True)
 
+            PALETA_NEON = ["#06b6d4", "#38bdf8", "#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899"]
+
             # 4. RENDERIZADO DEL DASHBOARD MULTI-PANEL CON DIVERSIDAD GRÁFICA
             if not metricas_seleccionadas:
                 st.info("Selecciona al menos una métrica en el cuadro superior para desplegar el panel.")
@@ -345,7 +350,6 @@ def ejecutar(df_base, fuente_activa=None):
                             
                             df_g = df_norm.groupby(eje_seleccionado)[metric_col].sum().reset_index(name='Valor')
                             
-                            # Limpieza estricta de semanas / enteros
                             df_g[eje_seleccionado] = df_g[eje_seleccionado].apply(
                                 lambda x: str(int(float(x))) if pd.notna(x) and str(x).replace('.','',1).isdigit() else str(x) if pd.notna(x) else ""
                             )
@@ -371,7 +375,7 @@ def ejecutar(df_base, fuente_activa=None):
                                     values='Valor',
                                     hole=0.45,
                                     template="plotly_dark",
-                                    color_discrete_sequence=px.colors.qualitative.Cyan
+                                    color_discrete_sequence=PALETA_NEON
                                 )
                                 fig.update_traces(
                                     textinfo="label+percent",
@@ -408,7 +412,7 @@ def ejecutar(df_base, fuente_activa=None):
                                     line=dict(width=2, color="#06b6d4"),
                                     hovertemplate=f"<b>{eje_seleccionado}:</b> %{{x}}<br><b>Valor:</b> {unidad_fmt}%{{y:,.0f}}<extra></extra>"
                                 )
-                            else: # Barras por defecto
+                            else:
                                 fig = px.bar(
                                     df_g, 
                                     x=eje_seleccionado, 
