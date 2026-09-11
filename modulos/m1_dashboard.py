@@ -1,8 +1,8 @@
 """
-MOTOR B2B (PRUEBA DE CIMIENTOS ESTRICTA - 12 COLUMNAS)
+MOTOR B2B (PRUEBA DE CIMIENTOS - ESTÉTICA Y LIMPIEZA VISUAL)
 ========================================================================
-- Objetivo: Validar la extracción lógica estricta sin margen de error.
-- Corte: Se fuerza el dataframe a exactamente 12 columnas.
+- Limpieza de Nulos: Se erradica la palabra "None", reemplazándola por celdas en blanco.
+- Pirámide Optimizada: Se suprimen redundancias en los nombres heredados.
 """
 import re
 import pandas as pd
@@ -18,12 +18,8 @@ def extractor_logico_universal(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]
         origen = str(df_raw["_Origen_Archivo"].dropna().iloc[0]) if not df_raw["_Origen_Archivo"].dropna().empty else origen
         df_raw = df_raw.drop(columns=["_Origen_Archivo"])
 
-    # =========================================================
-    # CORTE ESTRICTO Y ABSOLUTO A LAS PRIMERAS 12 COLUMNAS
-    # =========================================================
     df_raw = df_raw.iloc[:, :12].copy()
 
-    # Paso 1: Buscar la fila Ecuador (Línea de flotación operativa)
     fila_eje = 0
     for i in range(min(20, len(df_raw))):
         text_row = " ".join([str(x).lower() for x in df_raw.iloc[i] if pd.notna(x)])
@@ -31,22 +27,18 @@ def extractor_logico_universal(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]
             fila_eje = i
             break
 
-    # Paso 2: Determinar fin de encabezados (buscando años en la fila de abajo)
     fin_encabezados = fila_eje
     if fila_eje + 1 < len(df_raw):
         vals = [str(x).replace('.0','') for x in df_raw.iloc[fila_eje + 1] if pd.notna(x)]
         years = sum(1 for x in vals if x.isdigit() and len(x) == 4)
-        if years >= 2:
-            fin_encabezados = fila_eje + 1
+        if years >= 2: fin_encabezados = fila_eje + 1
 
     ecuador_datos = fin_encabezados + 1
 
-    # Paso 3: Herencia Horizontal (Celdas combinadas)
     inicio_encabezados = max(0, fila_eje - 2)
     df_headers = df_raw.iloc[inicio_encabezados:fin_encabezados + 1].copy()
     df_headers = df_headers.ffill(axis=1)
 
-    # Paso 4: Linaje Vertical (Construcción del nombre real)
     nuevas_cols = []
     for col_idx in range(len(df_headers.columns)):
         jerarquia = []
@@ -54,20 +46,24 @@ def extractor_logico_universal(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]
             val = df_headers.iloc[f_idx, col_idx]
             if pd.notna(val) and str(val).strip() != "" and str(val).lower() != 'nan':
                 texto = str(val).replace('.0', '').strip()
-                
-                # Ignorar basura
                 if len(texto) > 40: continue 
                 texto = re.sub(r'\b20\d{2}(?:\s*-\s*20\d{2})+\b', '', texto).strip('- ')
                 texto = " ".join(texto.split())
                 
                 texto_format = texto.title() if not texto.isdigit() else texto
-                if texto_format and (not jerarquia or jerarquia[-1].lower() != texto_format.lower()):
-                    jerarquia.append(texto_format)
+                
+                # Optimización Piramidal: Evitar repetición "Embolse ➔ Embolse Años"
+                if texto_format:
+                    if not jerarquia:
+                        jerarquia.append(texto_format)
+                    else:
+                        # Solo lo agrega si no es exactamente igual ni está contenido en la palabra anterior
+                        if texto_format.lower() not in jerarquia[-1].lower() and jerarquia[-1].lower() not in texto_format.lower():
+                            jerarquia.append(texto_format)
                     
         nombre_final = " ➔ ".join(jerarquia) if jerarquia else f"Columna_{col_idx}"
         nuevas_cols.append(nombre_final)
 
-    # Asignar Linaje al DataFrame de Datos
     df_datos = df_raw.iloc[ecuador_datos:].copy()
     
     cols_unicas, conteo = [], {}
@@ -81,7 +77,6 @@ def extractor_logico_universal(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]
             
     df_datos.columns = cols_unicas
     
-    # Paso 5: El Exterminador de Basura (Totales y Resúmenes en ejes X)
     mask = pd.Series([True] * len(df_datos), index=df_datos.index)
     for col in df_datos.columns[:3]:
         if df_datos[col].dtype == 'object':
@@ -91,7 +86,6 @@ def extractor_logico_universal(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]
     df_datos = df_datos[mask].reset_index(drop=True)
     df_datos = df_datos.dropna(how='all', axis=0)
 
-    # Autotipado numérico
     for col in df_datos.columns:
         df_datos[col] = df_datos[col].map(lambda v: np.nan if str(v).lower().strip() in VALORES_NULOS else v)
         serie_str = df_datos[col].dropna().astype(str).str.replace(r"[$\s%]", "", regex=True).str.replace(",", ".")
@@ -120,7 +114,7 @@ def ejecutar(df_base, fuente_activa=None):
         <div style='background: #111827; border-left: 4px solid #f43f5e; padding: 40px; border-radius: 8px; margin-top: 20px; text-align: center;'>
             <h2 style='color: #f3f4f6; font-family: Orbitron; margin-bottom: 15px;'>ESPERANDO ARCHIVO</h2>
             <p style='color: #9ca3af; font-family: Rajdhani; font-size: 18px; line-height: 1.6;'>
-                Sube tu matriz. El sistema bloqueará todo lo que pase de la columna 12.
+                Sube tu matriz. El sistema aplicará la limpieza visual profunda.
             </p>
         </div>
         """, unsafe_allow_html=True)
@@ -130,20 +124,35 @@ def ejecutar(df_base, fuente_activa=None):
         st.session_state["ultima_fuente"] = fuente_activa
         st.cache_data.clear()
 
-    with st.spinner("Procesando Cimientos..."):
+    with st.spinner("Procesando Cimientos y Limpiando Nulos..."):
         df_norm, origen = extractor_logico_universal(df_base)
         
         if df_norm.empty:
             st.error("⚠️ El archivo quedó vacío tras la extracción.")
             st.stop()
 
-    st.markdown("<div class='title-bar'>MATRIZ DE DATOS PURA (12 COLUMNAS EXACTAS)</div>", unsafe_allow_html=True)
+    st.markdown("<div class='title-bar'>MATRIZ DE DATOS PURA (12 COLUMNAS OPTIMIZADAS)</div>", unsafe_allow_html=True)
     st.markdown(f"<div class='source-badge'>📁 ARCHIVO: {origen}</div>", unsafe_allow_html=True)
     
-    st.info("📌 Revisa detenidamente: ¿Están bien armados los encabezados por herencia? ¿Están limpias las filas de las cintas?")
+    st.info("📌 Observación: Los nombres redundantes fueron compactados y los espacios vacíos ('None') fueron silenciados para una vista gerencial limpia.")
+
+    # ---------------------------------------------------------
+    # PARCHE DE FORMATEO VISUAL (ADIÓS "NONE")
+    # ---------------------------------------------------------
+    df_visual = df_norm.copy()
+    
+    # Rellenamos nulos numéricos con vacío en la visualización, 
+    # y formateamos enteros para que no salgan con .0
+    for col in df_visual.columns:
+        if pd.api.types.is_numeric_dtype(df_visual[col]):
+            df_visual[col] = df_visual[col].apply(
+                lambda x: "" if pd.isna(x) else (f"{int(x)}" if x.is_integer() else f"{x:.4f}")
+            )
+        else:
+            df_visual[col] = df_visual[col].fillna("")
 
     st.dataframe(
-        df_norm, 
+        df_visual, 
         use_container_width=True, 
         hide_index=True, 
         height=650
