@@ -1,9 +1,9 @@
 """
-MOTOR UNIVERSAL INTELIGENTE DE DATOS B2B (EDICIÓN ETIQUETAS LIMPIAS Y CASCADA)
-=============================================================================
-- Navegación: Cascada estricta de 4 niveles (Segmento 1 ➔ Padre ➔ Condición ➔ Año).
-- Limpieza de Etiquetas: Supresión de cadenas largas. Muestra solo Métrica Base + Año.
-- Diversidad Visual: Selector de estilo gráfico (Líneas, Área, Dona, Barras).
+MOTOR UNIVERSAL INTELIGENTE DE DATOS B2B (EDICIÓN AGRÍCOLA MULTI-PANEL)
+========================================================================
+- Rango Temporal: Selectores de Semana Inicial y Semana Final.
+- Grid Independiente: Selección múltiple de métricas con estilo de gráfico individual.
+- Formato Limpio: Nombres directos sin rutas largas y semanas en enteros.
 """
 import io
 import json
@@ -28,6 +28,8 @@ PALABRAS_MONEDA = ("precio", "costo", "valor", "ingreso", "venta", "presupuesto"
 PALABRAS_PORCENTAJE = ("%", "porcentaje", "pct", "cumplim", "participac", "tasa", "avance")
 PALABRAS_CODIGO = ("id", "código", "codigo", "cod_", "nit", "documento", "referencia", "ref_")
 
+PALETA_NEON = ["#06b6d4", "#38bdf8", "#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899"]
+
 def fmt_es(valor, decimales=0, prefijo="", sufijo=""):
     if pd.isna(valor) or valor == "":
         return ""
@@ -46,7 +48,7 @@ def limpiar_semantica(texto):
     return s.title()
 
 def obtener_nombre_limpio(col_completa):
-    """Extrae únicamente la métrica base y el año, suprimiendo la ruta de padres."""
+    """Sustituye rutas compuestas por la métrica final y el año."""
     partes = [p.strip() for p in col_completa.split(" | ")]
     if len(partes) >= 2:
         métrica_base = partes[-2] if re.match(r'^\d{4}$', partes[-1]) else partes[-1]
@@ -235,6 +237,7 @@ def inyectar_css():
         .kpi-card { background: rgba(15, 23, 42, 0.75); padding: 18px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.08); border-top: 3px solid #06b6d4; min-height: 105px; }
         .kpi-title { font-family: 'Rajdhani', sans-serif; font-size: 12px; color: #38bdf8; font-weight: 700; text-transform: uppercase; line-height: 1.2; } 
         .kpi-val { font-family: 'Orbitron', sans-serif; font-size: 20px; color: #f8fafc; font-weight: 800; margin-top: 8px; }
+        .chart-box { background: rgba(15, 23, 42, 0.6); padding: 15px; border-radius: 12px; border: 1px solid #1e293b; margin-bottom: 20px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -280,6 +283,7 @@ def ejecutar(df_base, fuente_activa=None):
         cols_num = [c for c, t in semantica.items() if t in ("cantidad", "moneda", "porcentaje")]
         cols_dimensiones = [c for c in df_norm.columns if c not in cols_num]
         
+        # Filtro de métricas limpias para tarjetas KPI
         kpi_metrics = [c for c in cols_num if not any(p in c.lower() for p in ("semana", "cinta", "codigo", "id", "nit"))]
         if not kpi_metrics:
             kpi_metrics = cols_num
@@ -292,8 +296,6 @@ def ejecutar(df_base, fuente_activa=None):
             for i, col in enumerate(kpi_metrics[:4]):
                 val_total = df_norm[col].sum()
                 formato = f"${fmt_es(val_total)}" if semantica[col] == "moneda" else fmt_es(val_total, 0)
-                
-                # Nombre limpio sin la ruta pesada A ➔ B ➔ C
                 nombre_kpi = obtener_nombre_limpio(col)
                 
                 with kpi_cols[i]:
@@ -310,111 +312,137 @@ def ejecutar(df_base, fuente_activa=None):
             st.markdown("<br><hr style='border-color: #1e293b;'><br>", unsafe_allow_html=True)
 
             # ==============================================================================
-            # 2. CONSTRUCCIÓN DE ARBOLESCENCIA DE 4 NIVELES (CASCADA)
+            # 2. IDENTIFICACIÓN Y FILTRADO POR RANGO DE SEMANAS
             # ==============================================================================
-            arbol_4_niveles = {}
-            for col in cols_num:
-                partes = [p.strip() for p in col.split(" | ")]
-                
-                if len(partes) >= 4:
-                    s1 = partes[0]
-                    s2 = partes[1]
-                    s3 = partes[-2]
-                    s4 = partes[-1] if re.match(r'^\d{4}$', partes[-1]) else "General"
-                elif len(partes) == 3:
-                    s1 = partes[0]
-                    s2 = partes[0]
-                    s3 = partes[1]
-                    s4 = partes[2] if re.match(r'^\d{4}$', partes[2]) else "General"
-                elif len(partes) == 2:
-                    s1 = "General"
-                    s2 = partes[0]
-                    s3 = partes[0] if re.match(r'^\d{4}$', partes[1]) else partes[1]
-                    s4 = partes[1] if re.match(r'^\d{4}$', partes[1]) else "General"
-                else:
-                    s1 = "General"
-                    s2 = "General"
-                    s3 = col
-                    s4 = "General"
-                
-                if s1 not in arbol_4_niveles: arbol_4_niveles[s1] = {}
-                if s2 not in arbol_4_niveles[s1]: arbol_4_niveles[s1][s2] = {}
-                if s3 not in arbol_4_niveles[s1][s2]: arbol_4_niveles[s1][s2][s3] = {}
-                arbol_4_niveles[s1][s2][s3][s4] = col
+            col_semana = next((c for c in df_norm.columns if "semana" in c.lower()), None)
+            semanas_validas = []
+            
+            if col_semana:
+                for v in df_norm[col_semana].dropna().unique():
+                    try:
+                        val_num = int(float(str(v).strip()))
+                        semanas_validas.append(val_num)
+                    except ValueError:
+                        pass
+            
+            semanas_validas = sorted(list(set(semanas_validas)))
+            if not semanas_validas:
+                semanas_validas = [1, 52]
 
-            # 3. SELECTORES EN CASCADA RESTAURADOS + DIVERSIFICACIÓN DE GRÁFICOS
             opciones_eje = sorted(cols_dimensiones, key=lambda x: (0 if 'cinta' in x.lower() else 1 if 'semana' in x.lower() else 2))
-            
-            c_eje, c_s1, c_s2, c_s3, c_s4, c_tipo = st.columns([1.1, 1.0, 1.0, 1.2, 0.8, 1.0])
-            
-            eje_seleccionado = c_eje.selectbox("Eje X (Agrupación):", opciones_eje if opciones_eje else df_norm.columns)
-            
-            s1_disp = list(arbol_4_niveles.keys())
-            s1_sel = c_s1.selectbox("1. Segmento:", s1_disp)
-            
-            s2_disp = list(arbol_4_niveles[s1_sel].keys())
-            s2_sel = c_s2.selectbox("2. Padre:", s2_disp)
-            
-            s3_disp = list(arbol_4_niveles[s1_sel][s2_sel].keys())
-            s3_sel = c_s3.selectbox("3. Condición:", s3_disp)
-            
-            s4_disp = list(arbol_4_niveles[s1_sel][s2_sel][s3_sel].keys())
-            s4_sel = c_s4.selectbox("4. Año:", s4_disp)
+            anios_detectados = sorted(list(set(re.findall(r'\b20\d{2}\b', " ".join(df_norm.columns)))))
 
-            default_tipo = "Dona (Distribución)" if "cinta" in eje_seleccionado.lower() else "Líneas (Tendencia)"
-            tipo_grafico = c_tipo.selectbox(
-                "Estilo Gráfico:", 
-                ["Líneas (Tendencia)", "Área (Acumulado)", "Dona (Distribución)", "Barras (Comparación)"],
-                index=["Líneas (Tendencia)", "Área (Acumulado)", "Dona (Distribución)", "Barras (Comparación)"].index(default_tipo)
+            # CONTROLES SUPERIORES: EJE, AÑO Y RANGO DE SEMANAS
+            c_eje, c_anio, c_s_ini, c_s_fin = st.columns([1.2, 0.8, 1.0, 1.0])
+            
+            eje_seleccionado = c_eje.selectbox("1. Agrupar Eje X:", opciones_eje if opciones_eje else df_norm.columns)
+            anio_sel = c_anio.selectbox("2. Año Operativo:", anios_detectados if anios_detectados else ["General"])
+            
+            sem_inicial = c_s_ini.selectbox("3. Semana Inicial:", semanas_validas, index=0)
+            sem_final = c_s_fin.selectbox("4. Semana Final:", semanas_validas, index=len(semanas_validas)-1)
+
+            # FILTRADO DE DATOS POR RANGO DE SEMANA
+            df_filtrado = df_norm.copy()
+            if col_semana and col_semana in df_filtrado.columns:
+                def dentro_rango(val):
+                    try:
+                        num = int(float(str(val).strip()))
+                        return sem_inicial <= num <= sem_final
+                    except ValueError:
+                        return True
+                df_filtrado = df_filtrado[df_filtrado[col_semana].apply(dentro_rango)]
+
+            # 3. SELECCIÓN MÚLTIPLE DE MÉTRICAS A GRAFICAR
+            metrics_opciones = [c for c in cols_num if anio_sel in c or anio_sel == "General"]
+            if not metrics_opciones:
+                metrics_opciones = cols_num
+
+            st.markdown("<h5 style='color: #38bdf8;'>5. Selecciona las métricas para proyectar la cuadrícula del Dashboard:</h5>", unsafe_allow_html=True)
+            metricas_seleccionadas = st.multiselect(
+                "Métricas activas:",
+                options=metrics_opciones,
+                default=metrics_opciones[:min(4, len(metrics_opciones))],
+                format_func=obtener_nombre_limpio,
+                label_visibility="collapsed"
             )
 
-            col_target = arbol_4_niveles[s1_sel][s2_sel][s3_sel][s4_sel]
+            st.markdown("<br>", unsafe_allow_html=True)
 
-            # 4. RENDERIZADO DEL GRÁFICO CON NOMBRE LIMPIO
-            df_g = df_norm.groupby(eje_seleccionado)[col_target].sum().reset_index(name='Valor')
-            
-            df_g[eje_seleccionado] = df_g[eje_seleccionado].apply(
-                lambda x: str(int(float(x))) if pd.notna(x) and str(x).replace('.','',1).isdigit() else str(x) if pd.notna(x) else ""
-            )
-            
-            def clave_orden(x):
-                try: return int(x)
-                except Exception: return str(x)
-                    
-            df_g['Orden'] = df_g[eje_seleccionado].apply(clave_orden)
-            df_g = df_g.sort_values('Orden').drop(columns=['Orden'])
-
-            unidad_fmt = "$" if semantica.get(col_target) == "moneda" else ""
-            nombre_limpio_grafico = f"{s3_sel.upper()} ({s4_sel})"
-            label_eje = eje_seleccionado.split(" | ")[-1] if " | " in eje_seleccionado else eje_seleccionado
-
-            PALETA_NEON = ["#06b6d4", "#38bdf8", "#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899"]
-
-            if "Dona" in tipo_grafico:
-                fig = px.pie(df_g, names=eje_seleccionado, values='Valor', hole=0.45, template="plotly_dark", color_discrete_sequence=PALETA_NEON)
-                fig.update_traces(textinfo="label+percent", hovertemplate=f"<b>%{{label}}:</b> {unidad_fmt}%{{value:,.0f}}<extra></extra>")
-            elif "Líneas" in tipo_grafico:
-                fig = px.line(df_g, x=eje_seleccionado, y='Valor', text='Valor', markers=True, template="plotly_dark")
-                fig.update_traces(texttemplate=f"{unidad_fmt}%{{text:,.0f}}", textposition="top center", line=dict(width=3, color="#06b6d4"), marker=dict(size=8, color="#38bdf8"), hovertemplate=f"<b>{eje_seleccionado}:</b> %{{x}}<br><b>Valor:</b> {unidad_fmt}%{{y:,.0f}}<extra></extra>")
-            elif "Área" in tipo_grafico:
-                fig = px.area(df_g, x=eje_seleccionado, y='Valor', text='Valor', template="plotly_dark")
-                fig.update_traces(texttemplate=f"{unidad_fmt}%{{text:,.0f}}", textposition="top center", fillcolor="rgba(6, 182, 212, 0.3)", line=dict(width=2, color="#06b6d4"), hovertemplate=f"<b>{eje_seleccionado}:</b> %{{x}}<br><b>Valor:</b> {unidad_fmt}%{{y:,.0f}}<extra></extra>")
+            # ==============================================================================
+            # 4. CUADRÍCULA MULTI-PANEL CON ESTILOS GRÁFICOS INDEPENDIENTES
+            # ==============================================================================
+            if not metricas_seleccionadas:
+                st.info("Selecciona al menos una métrica para renderizar los paneles analíticos.")
             else:
-                fig = px.bar(df_g, x=eje_seleccionado, y='Valor', text='Valor', template="plotly_dark", color='Valor', color_continuous_scale="Electric")
-                fig.update_traces(texttemplate=f"{unidad_fmt}%{{text:,.0f}}", textposition="outside", cliponaxis=False, hovertemplate=f"<b>{eje_seleccionado}:</b> %{{x}}<br><b>Valor:</b> {unidad_fmt}%{{y:,.0f}}<extra></extra>", marker_line_color="#06b6d4", marker_line_width=1.5, opacity=0.9)
+                for i in range(0, len(metricas_seleccionadas), 2):
+                    cols_grid = st.columns(2)
+                    
+                    for j in range(2):
+                        if i + j < len(metricas_seleccionadas):
+                            metric_col = metricas_seleccionadas[i+j]
+                            nombre_limpio = obtener_nombre_limpio(metric_col)
+                            
+                            with cols_grid[j]:
+                                # Tarjeta contenedora con selector individual de estilo
+                                st.markdown("<div class='chart-box'>", unsafe_allow_html=True)
+                                
+                                c_hdr, c_sel_tipo = st.columns([1.5, 1.0])
+                                c_hdr.markdown(f"<span style='color:#38bdf8; font-family:Orbitron; font-size:13px; font-weight:800;'>{nombre_limpio.upper()}</span>", unsafe_allow_html=True)
+                                
+                                # Selector dinámico de tipo de gráfico por panel individual
+                                default_estilo = "Dona (Distribución)" if "cinta" in eje_seleccionado.lower() else "Barras (Comparación)"
+                                estilo_chart = c_sel_tipo.selectbox(
+                                    "Tipo de Gráfico:",
+                                    ["Barras (Comparación)", "Líneas (Tendencia)", "Área (Acumulado)", "Dona (Distribución)"],
+                                    index=["Barras (Comparación)", "Líneas (Tendencia)", "Área (Acumulado)", "Dona (Distribución)"].index(default_estilo),
+                                    key=f"chart_type_{i}_{j}_{metric_col}",
+                                    label_visibility="collapsed"
+                                )
+                                
+                                # Agrupación de datos
+                                df_g = df_filtrado.groupby(eje_seleccionado)[metric_col].sum().reset_index(name='Valor')
+                                
+                                # Limpieza estricta de semanas / categorías en el eje X
+                                df_g[eje_seleccionado] = df_g[eje_seleccionado].apply(
+                                    lambda x: str(int(float(x))) if pd.notna(x) and str(x).replace('.','',1).isdigit() else str(x) if pd.notna(x) else ""
+                                )
+                                
+                                def clave_orden(x):
+                                    try: return int(x)
+                                    except Exception: return str(x)
+                                        
+                                df_g['Orden'] = df_g[eje_seleccionado].apply(clave_orden)
+                                df_g = df_g.sort_values('Orden').drop(columns=['Orden'])
 
-            fig.update_layout(
-                title=dict(text=f"ANÁLISIS DE TRAZABILIDAD: {nombre_limpio_grafico}", font=dict(family='Orbitron', size=15, color='#38bdf8')),
-                paper_bgcolor='rgba(11, 15, 25, 0)',
-                plot_bgcolor='rgba(15, 23, 42, 0.5)',
-                xaxis=dict(title=dict(text=label_eje, font=dict(color='#94a3b8')), tickfont=dict(color='#cbd5e1'), type='category'),
-                yaxis=dict(title=dict(text="Volumen", font=dict(color='#94a3b8')), tickfont=dict(color='#cbd5e1')),
-                coloraxis_showscale=False,
-                margin=dict(l=20, r=20, t=50, b=40),
-                height=450
-            )
+                                unidad_fmt = "$" if semantica.get(metric_col) == "moneda" else ""
+                                label_eje = eje_seleccionado.split(" | ")[-1] if " | " in eje_seleccionado else eje_seleccionado
 
-            st.plotly_chart(fig, use_container_width=True)
+                                # RENDERIZADO SEGÚN EL ESTILO SELECCIONADO PARA ESTE PANEL
+                                if "Dona" in estilo_chart:
+                                    fig = px.pie(df_g, names=eje_seleccionado, values='Valor', hole=0.45, template="plotly_dark", color_discrete_sequence=PALETA_NEON)
+                                    fig.update_traces(textinfo="label+percent", hovertemplate=f"<b>%{{label}}:</b> {unidad_fmt}%{{value:,.0f}}<extra></extra>")
+                                elif "Líneas" in estilo_chart:
+                                    fig = px.line(df_g, x=eje_seleccionado, y='Valor', text='Valor', markers=True, template="plotly_dark")
+                                    fig.update_traces(texttemplate=f"{unidad_fmt}%{{text:,.0f}}", textposition="top center", line=dict(width=3, color="#06b6d4"), marker=dict(size=8, color="#38bdf8"), hovertemplate=f"<b>{eje_seleccionado}:</b> %{{x}}<br><b>Valor:</b> {unidad_fmt}%{{y:,.0f}}<extra></extra>")
+                                elif "Área" in estilo_chart:
+                                    fig = px.area(df_g, x=eje_seleccionado, y='Valor', text='Valor', template="plotly_dark")
+                                    fig.update_traces(texttemplate=f"{unidad_fmt}%{{text:,.0f}}", textposition="top center", fillcolor="rgba(6, 182, 212, 0.3)", line=dict(width=2, color="#06b6d4"), hovertemplate=f"<b>{eje_seleccionado}:</b> %{{x}}<br><b>Valor:</b> {unidad_fmt}%{{y:,.0f}}<extra></extra>")
+                                else:
+                                    fig = px.bar(df_g, x=eje_seleccionado, y='Valor', text='Valor', template="plotly_dark", color='Valor', color_continuous_scale="Electric")
+                                    fig.update_traces(texttemplate=f"{unidad_fmt}%{{text:,.0f}}", textposition="outside", cliponaxis=False, hovertemplate=f"<b>{eje_seleccionado}:</b> %{{x}}<br><b>Valor:</b> {unidad_fmt}%{{y:,.0f}}<extra></extra>", marker_line_color="#06b6d4", marker_line_width=1.5, opacity=0.9)
+
+                                fig.update_layout(
+                                    paper_bgcolor='rgba(11, 15, 25, 0)',
+                                    plot_bgcolor='rgba(15, 23, 42, 0.5)',
+                                    xaxis=dict(title=dict(text=label_eje, font=dict(color='#94a3b8')), tickfont=dict(color='#cbd5e1'), type='category'),
+                                    yaxis=dict(title=dict(text="Volumen", font=dict(color='#94a3b8')), tickfont=dict(color='#cbd5e1')),
+                                    coloraxis_showscale=False,
+                                    margin=dict(l=10, r=10, t=20, b=30),
+                                    height=340
+                                )
+
+                                st.plotly_chart(fig, use_container_width=True)
+                                st.markdown("</div>", unsafe_allow_html=True)
 
     with tab_datos:
         st.markdown("<h4 style='color: #38bdf8; font-family: Orbitron;'>🗄️ BOVEDA DE DATOS NORMALIZADA</h4>", unsafe_allow_html=True)
