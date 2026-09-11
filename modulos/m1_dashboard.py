@@ -1,8 +1,9 @@
 """
-MOTOR UNIVERSAL INTELIGENTE DE DATOS (EDICIÓN AGRÍCOLA / BANANO B2B)
-=====================================================================
-Arquitectura con Rango Temporal de Semanas (Semana Inicial ➔ Semana Final),
-Trazabilidad de Cinta/Semana y Jerarquía Limpia de 4 Niveles.
+MOTOR UNIVERSAL INTELIGENTE DE DATOS (DASHBOARD BANANERO MULTI-PANEL B2B)
+========================================================================
+- Eje Operativo: Trazabilidad por CINTA (Color) y SEMANA (Entero 1-52).
+- Limpieza Estricta: Semanas como enteros limpios sin decimales.
+- Visualización: Cuadrícula Multi-Gráfico con selección múltiple (Checkboxes/Multiselect) y etiquetas directas en barra.
 """
 import io
 import json
@@ -163,6 +164,11 @@ def normalizar_datos(df_raw: pd.DataFrame) -> Dict[str, Any]:
         if num.notna().sum() / max(len(serie), 1) > 0.6:
             df[col] = num
             
+    # Formateo estricto de semanas como enteros limpios
+    for col in df.columns:
+        if "semana" in col.lower():
+            df[col] = df[col].apply(lambda x: str(int(float(x))) if pd.notna(x) and str(x).replace('.','',1).isdigit() else str(x) if pd.notna(x) else "")
+            
     return {"df_norm": df, "origen": etiqueta_origen}
 
 def inferir_semantica(df: pd.DataFrame) -> Dict[str, str]:
@@ -191,7 +197,7 @@ def generar_diagnostico_ia(muestra_json, stats_json, columnas):
             if api_key:
                 genai.configure(api_key=api_key)
                 prompt = f"""
-                Eres Génesis IA, motor de inteligencia agrícola B2B especializado en producción bananera.
+                Eres Génesis IA, motor de inteligencia agrícola y logística B2B especializado en producción bananera.
                 Analiza esta estructura:
                 Columnas: {columnas}
                 Muestra: {muestra_json}
@@ -199,9 +205,9 @@ def generar_diagnostico_ia(muestra_json, stats_json, columnas):
                 
                 Responde en JSON:
                 {{
-                    "titulo_contextual": "MONITOREO DE TRAZABILIDAD Y COSECHA BANANERA",
-                    "resumen_gerencial": "Evaluación táctica de volumen acumulado por rango de semanas e intensidad de enfunde.",
-                    "cuellos_de_botella": ["Anomalías de producción en tramos de semana críticos", "Variación de rendimiento por tipo de cinta"]
+                    "titulo_contextual": "MONITOREO DE EMBOLSE, CINTA Y COSECHA BANANERA",
+                    "resumen_gerencial": "Análisis táctico multivariable por cinta y semana de empaque.",
+                    "cuellos_de_botella": ["Trazabilidad de cinta y balance de racimos embolsados", "Rendimiento por hectárea y control de merma"]
                 }}
                 """
                 model = genai.GenerativeModel("gemini-1.5-flash", generation_config={"response_mime_type": "application/json"})
@@ -214,10 +220,10 @@ def generar_diagnostico_ia(muestra_json, stats_json, columnas):
     
     return {
         "titulo_contextual": "MONITOREO DE TRAZABILIDAD Y COSECHA BANANERA",
-        "resumen_gerencial": "Evaluación táctica de volumen acumulado por rango de semanas e intensidad de enfunde.",
+        "resumen_gerencial": "Matriz multivariable por color de cinta y semana de empaque integrada al tablero general.",
         "cuellos_de_botella": [
-            "Atención: Evaluar la estabilidad del volumen en las semanas de mayor presión de corte.",
-            "Recomendación: Comparar la tasa de conversión por hectárea en la ventana de tiempo seleccionada."
+            "Atención: Supervisar la evolución de racimos y cajas convertidas por cinta.",
+            "Recomendación: Comparar la tasa de merma por hectárea en el rango de semanas activo."
         ]
     }
 
@@ -274,6 +280,7 @@ def ejecutar(df_base, fuente_activa=None):
 
     with tab_dash:
         cols_num = [c for c, t in semantica.items() if t in ("cantidad", "moneda", "porcentaje")]
+        cols_dimensiones = [c for c in df_norm.columns if c not in cols_num]
         
         if not cols_num:
             st.warning("No se detectaron variables numéricas para generar analítica.")
@@ -300,171 +307,135 @@ def ejecutar(df_base, fuente_activa=None):
             
             st.markdown("<br><hr style='border-color: #1e293b;'><br>", unsafe_allow_html=True)
 
-            # ==============================================================================
-            # 2. CONSTRUCCIÓN DE ARBOLESCENCIA SEGMENTOS 1 A 4
-            # ==============================================================================
-            arbol_4_niveles = {}
-            for col in cols_num:
-                partes = [p.strip() for p in col.split(" | ")]
-                
-                if len(partes) >= 4:
-                    s1 = partes[0]
-                    s2 = partes[1]
-                    s3 = partes[-2]
-                    s4 = partes[-1] if re.match(r'^\d{4}$', partes[-1]) else "General"
-                elif len(partes) == 3:
-                    s1 = partes[0]
-                    s2 = partes[0]
-                    s3 = partes[1]
-                    s4 = partes[2] if re.match(r'^\d{4}$', partes[2]) else "General"
-                elif len(partes) == 2:
-                    s1 = "General"
-                    s2 = partes[0]
-                    s3 = partes[0] if re.match(r'^\d{4}$', partes[1]) else partes[1]
-                    s4 = partes[1] if re.match(r'^\d{4}$', partes[1]) else "General"
-                else:
-                    s1 = "General"
-                    s2 = "General"
-                    s3 = col
-                    s4 = "General"
-                
-                if s1 not in arbol_4_niveles:
-                    arbol_4_niveles[s1] = {}
-                if s2 not in arbol_4_niveles[s1]:
-                    arbol_4_niveles[s1][s2] = {}
-                if s3 not in arbol_4_niveles[s1][s2]:
-                    arbol_4_niveles[s1][s2][s3] = {}
-                arbol_4_niveles[s1][s2][s3][s4] = col
-
-            # 3. DETECCIÓN AUTOMÁTICA DEL EJE OPERATIVO (SEMANA / CINTA)
-            col_eje_x = None
-            for c in df_norm.columns:
+            # 2. IDENTIFICACIÓN Y CONFIGURACIÓN DEL EJE OPERATIVO (CINTA / SEMANA)
+            opciones_eje = []
+            for c in cols_dimensiones:
                 c_low = c.lower()
-                if "semana" in c_low or "cinta" in c_low:
-                    col_eje_x = c
-                    break
-            if not col_eje_x:
-                cols_cat = [c for c, t in semantica.items() if t in ("categoria", "texto")]
-                col_eje_x = cols_cat[0] if cols_cat else df_norm.columns[0]
+                if "cinta" in c_low or "semana" in c_low:
+                    opciones_eje.append(c)
+            if not opciones_eje:
+                opciones_eje = cols_dimensiones if cols_dimensiones else [df_norm.columns[0]]
 
-            # 4. EXTRAER Y ORDENAR LAS SEMANAS NUMÉRICAMENTE PARA EL RANGO
+            # 3. CONTROLES DEL DASHBOARD MULTI-GRÁFICO
+            c_eje, c_anio, c_s_ini, c_s_fin = st.columns([1.2, 0.8, 1.0, 1.0])
+            
+            eje_seleccionado = c_eje.selectbox("Eje Principal de Análisis (Cinta / Semana):", opciones_eje)
+            
+            # Años disponibles
+            anios_detectados = sorted(list(set(re.findall(r'\b20\d{2}\b', " ".join(df_norm.columns)))))
+            anio_sel = c_anio.selectbox("Año:", anios_detectados if anios_detectados else ["General"])
+
+            # Extracción y ordenamiento de semanas numéricas (Enteros limpios)
+            col_semana = next((c for c in df_norm.columns if "semana" in c.lower()), None)
             semanas_lista = []
-            if col_eje_x in df_norm.columns:
-                for val in df_norm[col_eje_x].dropna().unique():
+            if col_semana:
+                for val in df_norm[col_semana].dropna().unique():
                     try:
-                        num = float(str(val).replace(".0", "").strip())
-                        semanas_lista.append(num)
+                        n = int(float(str(val).strip()))
+                        semanas_lista.append(n)
                     except ValueError:
                         pass
-            
             semanas_lista = sorted(list(set(semanas_lista)))
             if not semanas_lista:
-                semanas_lista = [1.0, 52.0]
+                semanas_lista = [1, 52]
 
-            # 5. SELECTORES EN CASCADA CON RANGO TEMPORAL (SEMANA INICIAL Y FINAL)
-            c_s1, c_s2, c_s3, c_s4, c_s_ini, c_s_fin = st.columns([1.0, 1.0, 1.2, 0.8, 0.9, 0.9])
-            
-            s1_disp = list(arbol_4_niveles.keys())
-            s1_sel = c_s1.selectbox("Segmento 1:", s1_disp)
-            
-            s2_disp = list(arbol_4_niveles[s1_sel].keys())
-            s2_sel = c_s2.selectbox("Segmento 2:", s2_disp)
-            
-            s3_disp = list(arbol_4_niveles[s1_sel][s2_sel].keys())
-            s3_sel = c_s3.selectbox("Segmento 3:", s3_disp)
-            
-            s4_disp = list(arbol_4_niveles[s1_sel][s2_sel][s3_sel].keys())
-            s4_sel = c_s4.selectbox("Segmento 4 (Año):", s4_disp)
-
-            # Rango de Semanas
-            min_sem = min(semanas_lista)
-            max_sem = max(semanas_lista)
-            
             sem_inicial = c_s_ini.selectbox("Semana Inicial:", semanas_lista, index=0)
-            
-            # La semana final se ajusta por defecto al máximo del rango
             idx_max = len(semanas_lista) - 1 if len(semanas_lista) > 0 else 0
             sem_final = c_s_fin.selectbox("Semana Final:", semanas_lista, index=idx_max)
 
-            col_target = arbol_4_niveles[s1_sel][s2_sel][s3_sel][s4_sel]
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # 4. MULTI-SELECCIÓN DE MÉTRICAS PARA EL DASHBOARD
+            metrics_opciones = [c for c in cols_num if anio_sel in c or anio_sel == "General"]
+            if not metrics_opciones:
+                metrics_opciones = cols_num
 
-            # 6. FILTRADO POR RANGO TEMPORAL DE SEMANAS
+            def mapeo_nombre_limpio(col):
+                partes = [p.strip() for p in col.split(" | ")]
+                return " ➔ ".join(partes[:-1]) if len(partes) > 1 else col
+
+            metricas_seleccionadas = st.multiselect(
+                "📊 SELECCIONA LAS MÉTRICAS PARA CONSTRUIR EL DASHBOARD MULTI-PANEL:",
+                options=metrics_opciones,
+                default=metrics_opciones[:min(4, len(metrics_opciones))],
+                format_func=mapeo_nombre_limpio
+            )
+
+            # 5. FILTRADO POR RANGO TEMPORAL DE SEMANAS
             df_g_base = df_norm.copy()
-            if col_eje_x in df_g_base.columns:
+            if col_semana and col_semana in df_g_base.columns:
                 def dentro_de_rango(val):
                     try:
-                        n = float(str(val).replace(".0", "").strip())
+                        n = int(float(str(val).strip()))
                         return sem_inicial <= n <= sem_final
                     except ValueError:
                         return True
-                df_g_base = df_g_base[df_g_base[col_eje_x].apply(dentro_de_rango)]
+                df_g_base = df_g_base[df_g_base[col_semana].apply(dentro_de_rango)]
 
-            # Agrupación y ordenamiento por semana
-            df_g = df_g_base.groupby(col_eje_x)[col_target].sum().reset_index(name='Valor')
-            
-            # Conversión auxiliar para ordenar secuencialmente las barras
-            def clave_orden(x):
-                try:
-                    return float(str(x).replace(".0", "").strip())
-                except ValueError:
-                    return 0.0
-            
-            df_g['Orden_Temp'] = df_g[col_eje_x].apply(clave_orden)
-            df_g = df_g.sort_values('Orden_Temp', ascending=True).drop(columns=['Orden_Temp'])
+            # 6. RENDERIZADO DE LA CUADRÍCULA DASHBOARD (MULTI-GRÁFICOS SIMULTÁNEOS)
+            if not metricas_seleccionadas:
+                st.info("Selecciona al menos una métrica del panel superior para renderizar los gráficos.")
+            else:
+                num_charts = len(metricas_seleccionadas)
+                cols_grid = st.columns(2) if num_charts > 1 else [st.container()]
+                
+                for idx, metric_col in enumerate(metricas_seleccionadas):
+                    target_col = cols_grid[idx % 2] if num_charts > 1 else cols_grid[0]
+                    
+                    df_g = df_g_base.groupby(eje_seleccionado)[metric_col].sum().reset_index(name='Valor')
+                    df_g['Valor_Display'] = df_g['Valor'].apply(lambda v: round(v, 1) if pd.notna(v) else 0)
+                    
+                    # Ordenar el eje X secuencialmente
+                    if "semana" in eje_seleccionado.lower():
+                        df_g['Orden'] = df_g[eje_seleccionado].apply(lambda x: int(float(str(x))) if str(x).isdigit() else 0)
+                        df_g = df_g.sort_values('Orden').drop(columns=['Orden'])
 
-            df_g['Valor_Display'] = df_g['Valor'].apply(lambda v: round(v, 1) if pd.notna(v) else 0)
+                    fig = px.bar(
+                        df_g, 
+                        x=eje_seleccionado, 
+                        y='Valor',
+                        text='Valor_Display',
+                        template="plotly_dark",
+                        color='Valor',
+                        color_continuous_scale="Electric"
+                    )
 
-            # 7. RENDERIZADO DEL GRÁFICO SECUENCIAL PLOTLY
-            fig = px.bar(
-                df_g, 
-                x=col_eje_x, 
-                y='Valor',
-                text='Valor_Display',
-                template="plotly_dark",
-                color='Valor',
-                color_continuous_scale="Electric"
-            )
+                    unidad_fmt = "$" if semantica.get(metric_col) == "moneda" else ""
+                    
+                    # ETIQUETAS DIRECTAS EN BARRA (textposition='outside')
+                    fig.update_traces(
+                        texttemplate=f'{unidad_fmt}%{{text:,.1f}}', 
+                        textposition='outside',
+                        cliponaxis=False,
+                        hovertemplate=f"<b>{eje_seleccionado}:</b> %{{x}}<br><b>Valor:</b> {unidad_fmt}%{{y:,.1f}}<extra></extra>",
+                        marker_line_color='#06b6d4',
+                        marker_line_width=1.5,
+                        opacity=0.9
+                    )
+                    
+                    nombre_titulo = mapeo_nombre_limpio(metric_col).upper()
+                    label_eje = eje_seleccionado.split(" | ")[-1] if " | " in eje_seleccionado else eje_seleccionado
 
-            unidad_fmt = "$" if semantica.get(col_target) == "moneda" else ""
-            
-            fig.update_traces(
-                texttemplate=f'{unidad_fmt}%{{text:,.1f}}', 
-                textposition='outside',
-                hovertemplate=f"<b>{col_eje_x}:</b> %{{x}}<br><b>Valor:</b> {unidad_fmt}%{{y:,.1f}}<extra></extra>",
-                marker_line_color='#06b6d4',
-                marker_line_width=1.5,
-                opacity=0.9
-            )
-            
-            titulo_grafico = f"{s2_sel.upper()} ➔ {s3_sel.upper()} ({s4_sel})" if s1_sel != "General" else col_target.upper()
-            titulo_grafico += f" [SEMANA {int(sem_inicial)} A {int(sem_final)}]"
+                    fig.update_layout(
+                        title=dict(
+                            text=f"{nombre_titulo} [{anio_sel}]",
+                            font=dict(family='Orbitron', size=13, color='#38bdf8')
+                        ),
+                        paper_bgcolor='rgba(11, 15, 25, 0)',
+                        plot_bgcolor='rgba(15, 23, 42, 0.5)',
+                        xaxis=dict(
+                            title=dict(text=label_eje, font=dict(color='#94a3b8')), 
+                            tickfont=dict(color='#cbd5e1'),
+                            type='category'
+                        ),
+                        yaxis=dict(title=dict(text="Volumen", font=dict(color='#94a3b8')), tickfont=dict(color='#cbd5e1')),
+                        coloraxis_showscale=False,
+                        margin=dict(l=20, r=20, t=50, b=40),
+                        height=380
+                    )
 
-            label_x_limpio = col_eje_x.split(" | ")[-1] if " | " in col_eje_x else col_eje_x
-            fig.update_layout(
-                title=dict(
-                    text=f"TRAZABILIDAD: {titulo_grafico}",
-                    font=dict(family='Orbitron', size=15, color='#38bdf8')
-                ),
-                paper_bgcolor='rgba(11, 15, 25, 0)',
-                plot_bgcolor='rgba(15, 23, 42, 0.5)',
-                xaxis=dict(
-                    title=dict(text=f"Eje Operativo: {label_x_limpio}", font=dict(color='#94a3b8')), 
-                    tickfont=dict(color='#cbd5e1'),
-                    type='category' # Forzar orden secuencial de categorías
-                ),
-                yaxis=dict(title=dict(text="Volumen / Unidad", font=dict(color='#94a3b8')), tickfont=dict(color='#cbd5e1')),
-                coloraxis_showscale=False,
-                hoverlabel=dict(
-                    bgcolor="#0f172a",
-                    font_size=13,
-                    font_family="Rajdhani",
-                    font_color="#f8fafc"
-                ),
-                margin=dict(l=20, r=20, t=60, b=40),
-                height=460
-            )
-
-            st.plotly_chart(fig, use_container_width=True)
+                    with target_col:
+                        st.plotly_chart(fig, use_container_width=True)
 
     with tab_datos:
         st.markdown("<h4 style='color: #38bdf8; font-family: Orbitron;'>🗄️ BÓVEDA DE DATOS OPERATIVOS NORMALIZADA</h4>", unsafe_allow_html=True)
