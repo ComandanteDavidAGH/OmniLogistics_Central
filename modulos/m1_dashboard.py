@@ -1,9 +1,9 @@
 """
 MOTOR B2B IMPULSADO POR AGENTE IA (GÉNESIS ORQUESTRATOR)
 ========================================================================
+- Compatibilidad Absoluta: Corrección de applymap para Pandas 2.2.0+.
 - Empty State: Pantalla de bienvenida elegante cuando no hay datos.
-- Agente IA: Mapea la estructura del archivo entrante.
-- Construcción Dinámica: Separa Dimensiones (Ejes) de Métricas (Valores).
+- Agente IA: Mapea la estructura del archivo entrante autónomamente.
 """
 import io
 import json
@@ -62,7 +62,11 @@ def cazador_de_encabezados(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
             break
 
     df_headers = df_search.iloc[0:max(1, data_idx)].copy()
-    df_headers = df_headers.applymap(lambda v: np.nan if pd.isna(v) or 'unnamed' in str(v).lower() or str(v).strip() == '' else str(v).strip())
+    
+    # FIX PANDAS 2.2.0+: Usar apply con map en lugar de applymap
+    df_headers = df_headers.apply(lambda col: col.map(
+        lambda v: np.nan if pd.isna(v) or 'unnamed' in str(v).lower() or str(v).strip() == '' else str(v).strip()
+    ))
     df_headers = df_headers.ffill(axis=1)
 
     nuevas_cols = []
@@ -93,7 +97,10 @@ def cazador_de_encabezados(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
 @st.cache_data(show_spinner=False)
 def procesar_archivo(df_raw: pd.DataFrame) -> Dict[str, Any]:
     df, origen = cazador_de_encabezados(df_raw)
-    df = df.applymap(lambda v: np.nan if str(v).lower().strip() in VALORES_NULOS else v)
+    
+    # FIX PANDAS 2.2.0+: Usar apply con map en lugar de applymap
+    df = df.apply(lambda col: col.map(lambda v: np.nan if str(v).lower().strip() in VALORES_NULOS else v))
+    
     for col in df.columns:
         serie_str = df[col].dropna().astype(str).str.replace(r"[$\s%]", "", regex=True).str.replace(",", ".")
         num = pd.to_numeric(serie_str, errors="coerce")
@@ -185,9 +192,6 @@ def inyectar_css():
 def ejecutar(df_base, fuente_activa=None):
     inyectar_css()
 
-    # ==========================================
-    # 1. ESTADO VACÍO (WELCOME SCREEN INTELIGENTE)
-    # ==========================================
     if df_base is None or df_base.empty:
         st.markdown("<div class='title-bar'>⚡ GÉNESIS IA : ESPERANDO INGESTA DE DATOS</div>", unsafe_allow_html=True)
         st.markdown("""
@@ -210,9 +214,6 @@ def ejecutar(df_base, fuente_activa=None):
         """, unsafe_allow_html=True)
         return
 
-    # ==========================================
-    # 2. EJECUCIÓN DEL AGENTE (CON DATOS)
-    # ==========================================
     if "ultima_fuente" not in st.session_state or st.session_state["ultima_fuente"] != fuente_activa:
         st.session_state["ultima_fuente"] = fuente_activa
         st.cache_data.clear()
