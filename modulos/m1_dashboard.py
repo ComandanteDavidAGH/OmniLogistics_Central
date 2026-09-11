@@ -1,7 +1,7 @@
 """
-MOTOR UNIVERSAL INTELIGENTE DE DATOS (CASCADA JERÁRQUICA B2B)
-=============================================================
-Arquitectura con Selección Dinámica Padre-Hijo-Año y Fallback Universal.
+MOTOR UNIVERSAL INTELIGENTE DE DATOS (ARBOLESCENCIA DE 4 NIVELES)
+================================================================
+Navegación Dinámica: Segmento Principal ➔ Padre ➔ Hijo (Condición) ➔ Año
 """
 import io
 import json
@@ -172,17 +172,17 @@ def generar_diagnostico_ia(muestra_json, stats_json, columnas):
             if api_key:
                 genai.configure(api_key=api_key)
                 prompt = f"""
-                Eres Génesis IA, motor de inteligencia agrícola y logística B2B.
-                Analiza esta estructura de datos:
+                Eres Génesis IA, motor analítico B2B.
+                Analiza esta estructura:
                 Columnas: {columnas}
-                Muestra Operativa: {muestra_json}
-                Resumen Estadístico: {stats_json}
+                Muestra: {muestra_json}
+                Resumen: {stats_json}
                 
-                Responde estrictamente en JSON:
+                Responde en JSON:
                 {{
-                    "titulo_contextual": "Título Gerencial (Ej: AUDITORÍA DE PRODUCCIÓN Y LOGÍSTICA)",
-                    "resumen_gerencial": "Análisis táctico de rendimiento en 2 oraciones.",
-                    "cuellos_de_botella": ["Alerta o variabilidad detectada 1", "Recomendación operativa 2"]
+                    "titulo_contextual": "AUDITORÍA TÁCTICA DE PRODUCCIÓN",
+                    "resumen_gerencial": "Evaluación gerencial en 2 oraciones.",
+                    "cuellos_de_botella": ["Alerta o variabilidad 1", "Recomendación 2"]
                 }}
                 """
                 model = genai.GenerativeModel("gemini-1.5-flash", generation_config={"response_mime_type": "application/json"})
@@ -193,10 +193,10 @@ def generar_diagnostico_ia(muestra_json, stats_json, columnas):
     
     return {
         "titulo_contextual": "DIAGNÓSTICO TÁCTICO DE OPERACIONES",
-        "resumen_gerencial": "Estructura jerárquica procesada con éxito. Se detectan patrones operativos y métricas de rendimiento consolidadas para análisis de decisiones.",
+        "resumen_gerencial": "Estructura jerárquica procesada con éxito. Matriz consolidada por segmentos, módulos y condiciones anuales.",
         "cuellos_de_botella": [
-            "Atención: Supervisar variaciones de volumen en periodos de transición.",
-            "Recomendación: Comparar promedios históricos contra la proyección del año activo."
+            "Atención: Monitorear variaciones en el volumen de semanas críticas.",
+            "Recomendación: Comparar rendimientos por hectárea entre ciclos históricos."
         ]
     }
 
@@ -255,7 +255,7 @@ def ejecutar(df_base, fuente_activa=None):
         if not cols_num:
             st.warning("No se detectaron variables numéricas para generar analítica.")
         else:
-            # 1. TARJETAS KPI FUTURISTAS CON NOMBRES CONTEXTUALES
+            # 1. TARJETAS KPI FUTURISTAS
             kpi_cols = st.columns(min(4, len(cols_num)))
             for i, col in enumerate(cols_num[:4]):
                 val_total = df_norm[col].sum()
@@ -278,56 +278,62 @@ def ejecutar(df_base, fuente_activa=None):
             st.markdown("<br><hr style='border-color: #1e293b;'><br>", unsafe_allow_html=True)
 
             # ==============================================================================
-            # 2. CONSTRUCCIÓN DE LA ARBOLESCENCIA CASCADA (PADRE ➔ HIJO ➔ AÑO) CON FALLBACK
+            # 2. CONSTRUCCIÓN DE ARBOLESCENCIA COMPLETA DE 4 NIVELES
             # ==============================================================================
-            arbol_jerarquico = {}
+            arbol_4_niveles = {}
             for col in cols_num:
                 partes = [p.strip() for p in col.split(" | ")]
                 
-                if len(partes) >= 3:
+                if len(partes) >= 4:
+                    segmento = partes[0]                           # Ej: PLANTAS
+                    padre = partes[1]                              # Ej: EMBOLSE
+                    hijo = partes[-2]                              # Ej: ACUMULADO EMBOLSE / POR HECTAREA
+                    anio = partes[-1] if re.match(r'^\d{4}$', partes[-1]) else "General"
+                elif len(partes) == 3:
+                    segmento = partes[0]
                     padre = partes[0]
                     hijo = partes[1]
-                    anio = partes[-1] if re.match(r'^\d{4}$', partes[-1]) else "General"
+                    anio = partes[2] if re.match(r'^\d{4}$', partes[2]) else "General"
                 elif len(partes) == 2:
+                    segmento = "General"
                     padre = partes[0]
-                    if re.match(r'^\d{4}$', partes[1]):
-                        hijo = partes[0]
-                        anio = partes[1]
-                    else:
-                        hijo = partes[1]
-                        anio = "General"
+                    hijo = partes[0] if re.match(r'^\d{4}$', partes[1]) else partes[1]
+                    anio = partes[1] if re.match(r'^\d{4}$', partes[1]) else "General"
                 else:
-                    # Fallback para archivos planos / CSVs estándar
-                    padre = "Métricas Principales"
+                    segmento = "General"
+                    padre = "General"
                     hijo = col
                     anio = "General"
                 
-                if padre not in arbol_jerarquico:
-                    arbol_jerarquico[padre] = {}
-                if hijo not in arbol_jerarquico[padre]:
-                    arbol_jerarquico[padre][hijo] = {}
-                arbol_jerarquico[padre][hijo][anio] = col
+                if segmento not in arbol_4_niveles: arbol_4_niveles[segmento] = {}
+                if padre not in arbol_4_niveles[segmento]: arbol_4_niveles[segmento][padre] = {}
+                if hijo not in arbol_4_niveles[segmento][padre]: arbol_4_niveles[segmento][padre][hijo] = {}
+                arbol_4_niveles[segmento][padre][hijo][anio] = col
 
-            # 3. SELECTORES DINÁMICOS EN CASCADA
+            # 3. SELECTORES EN CASCADA COMPLETA (SEGMENTO ➔ PADRE ➔ HIJO ➔ AÑO)
             cols_categoricas = [c for c, t in semantica.items() if t in ("categoria", "texto")]
-            c_eje_x, c_padre, c_hijo, c_anio = st.columns([1.2, 1.2, 1.4, 0.8])
+            c_eje_x, c_seg, c_padre, c_hijo, c_anio = st.columns([1.1, 1.1, 1.1, 1.3, 0.8])
             
-            eje_x = c_eje_x.selectbox("Eje Principal (Segmento):", cols_categoricas if cols_categoricas else df_norm.columns)
+            eje_x = c_eje_x.selectbox("Eje Principal:", cols_categoricas if cols_categoricas else df_norm.columns)
             
-            # Selector 1: Padre Maestro
-            padres_disponibles = list(arbol_jerarquico.keys())
-            padre_sel = c_padre.selectbox("Módulo Padre:", padres_disponibles)
+            # Selector 1: Segmento Principal (PLANTAS, HECTAREAS, General)
+            segmentos_disp = list(arbol_4_niveles.keys())
+            seg_sel = c_seg.selectbox("1. Segmento:", segmentos_disp)
             
-            # Selector 2: Hijo Directo (FILTRADO DINÁMICAMENTE POR EL PADRE SELECCIONADO)
-            hijos_disponibles = list(arbol_jerarquico[padre_sel].keys())
-            hijo_sel = c_hijo.selectbox("Métrica / Sub-Variable:", hijos_disponibles)
+            # Selector 2: Padre Maestro (EMBOLSE, CAJAS PRODUCCION, MERMA, etc.)
+            padres_disp = list(arbol_4_niveles[seg_sel].keys())
+            padre_sel = c_padre.selectbox("2. Padre:", padres_disp)
             
-            # Selector 3: Año / Temporal (FILTRADO DINÁMICAMENTE POR EL HIJO SELECCIONADO)
-            anios_disponibles = list(arbol_jerarquico[padre_sel][hijo_sel].keys())
-            anio_sel = c_anio.selectbox("Año:", anios_disponibles)
+            # Selector 3: Condición / Hijo Penúltimo (EMBOLSE AÑOS, POR HECTAREA, CORTADA, etc.)
+            hijos_disp = list(arbol_4_niveles[seg_sel][padre_sel].keys())
+            hijo_sel = c_hijo.selectbox("3. Condición / Hijo:", hijos_disp)
+            
+            # Selector 4: Filtro Temporal (2022, 2023, 2024, 2025, 2026)
+            anios_disp = list(arbol_4_niveles[seg_sel][padre_sel][hijo_sel].keys())
+            anio_sel = c_anio.selectbox("4. Año:", anios_disp)
 
-            # Columna objetivo final
-            col_target = arbol_jerarquico[padre_sel][hijo_sel][anio_sel]
+            # Columna final seleccionada
+            col_target = arbol_4_niveles[seg_sel][padre_sel][hijo_sel][anio_sel]
 
             # 4. RENDERIZADO DEL GRÁFICO (PLOTLY CYBERPUNK)
             df_g = df_norm.groupby(eje_x)[col_target].sum().reset_index(name='Valor').sort_values('Valor', ascending=False).head(15)
@@ -351,7 +357,7 @@ def ejecutar(df_base, fuente_activa=None):
                 opacity=0.9
             )
             
-            titulo_grafico = f"{padre_sel.upper()} ➔ {hijo_sel.upper()} ({anio_sel})" if padre_sel != "Métricas Principales" else col_target.upper()
+            titulo_grafico = f"{padre_sel.upper()} ➔ {hijo_sel.upper()} ({anio_sel})" if seg_sel != "General" else col_target.upper()
             fig.update_layout(
                 title=dict(
                     text=f"COMPARATIVA: {titulo_grafico}",
