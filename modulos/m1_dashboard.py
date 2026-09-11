@@ -1,9 +1,9 @@
 """
-MOTOR UNIVERSAL INTELIGENTE DE DATOS B2B (DASHBOARD BANANERO MULTI-PANEL)
-========================================================================
-- Trazabilidad Operativa: CINTA (Color) y SEMANA (Entero sin decimales 1-52).
-- Visualizacion: Panel Grid Multi-Grafico con seleccion de multiple metrica.
-- Inteligencia: Diagnostico Tactico Genesis IA.
+MOTOR UNIVERSAL INTELIGENTE DE DATOS B2B (DASHBOARD MULTI-GRÁFICO)
+==================================================================
+- Gestión de Memoria: Purga de caché automática en re-carga.
+- Diversidad Visual: Selector de tipo de gráfico (Líneas, Área, Dona, Barras).
+- Trazabilidad Operativa: CINTA y SEMANA sin decimales.
 """
 import io
 import json
@@ -128,7 +128,6 @@ def cazador_de_encabezados(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
     df_final = df_final.dropna(how='all', axis=0).dropna(how='all', axis=1)
     return df_final.reset_index(drop=True), origen_etiqueta
 
-@st.cache_data(show_spinner=False)
 def normalizar_datos(df_raw: pd.DataFrame) -> Dict[str, Any]:
     df, etiqueta_origen = cazador_de_encabezados(df_raw)
     
@@ -232,6 +231,11 @@ def inyectar_css():
 def ejecutar(df_base, fuente_activa=None):
     inyectar_css()
     
+    # CONTROL DE MEMORIA: Detectar cambio de fuente y purgar caché si es necesario
+    if "ultima_fuente" not in st.session_state or st.session_state["ultima_fuente"] != fuente_activa:
+        st.session_state["ultima_fuente"] = fuente_activa
+        st.cache_data.clear()
+
     with st.spinner("Construyendo Dashboard Multivariable..."):
         res = normalizar_datos(df_base)
         df_norm = res["df_norm"]
@@ -292,16 +296,23 @@ def ejecutar(df_base, fuente_activa=None):
             
             st.markdown("<br><hr style='border-color: #1e293b;'><br>", unsafe_allow_html=True)
 
-            # 2. SELECCION DE EJE PRIORIZANDO 'CINTA' Y 'SEMANA'
+            # 2. CONTROLES GENERALES DE AGRUPACIÓN Y FILTRO
             opciones_eje = sorted(cols_dimensiones, key=lambda x: (0 if 'cinta' in x.lower() else 1 if 'semana' in x.lower() else 2))
-            
             anios_detectados = sorted(list(set(re.findall(r'\b20\d{2}\b', " ".join(df_norm.columns)))))
             
-            c_eje, c_anio = st.columns([1.5, 1])
-            eje_seleccionado = c_eje.selectbox("1. Variable de Agrupacion (Eje X):", opciones_eje if opciones_eje else df_norm.columns)
-            anio_sel = c_anio.selectbox("2. Filtro de Anio Operativo:", anios_detectados if anios_detectados else ["General"])
+            c_eje, c_anio, c_tipo = st.columns([1.2, 0.8, 1.0])
+            eje_seleccionado = c_eje.selectbox("1. Variable de Agrupación (Eje X):", opciones_eje if opciones_eje else df_norm.columns)
+            anio_sel = c_anio.selectbox("2. Filtro de Año Operativo:", anios_detectados if anios_detectados else ["General"])
+            
+            # Formato predeterminado inteligente según la variable del Eje X
+            default_tipo = "Dona (Distribución)" if "cinta" in eje_seleccionado.lower() else "Líneas (Tendencia)"
+            tipo_grafico_global = c_tipo.selectbox(
+                "3. Estilo de Gráfico por Defecto:", 
+                ["Líneas (Tendencia)", "Área (Acumulado)", "Dona (Distribución)", "Barras (Comparación)"],
+                index=["Líneas (Tendencia)", "Área (Acumulado)", "Dona (Distribución)", "Barras (Comparación)"].index(default_tipo) if default_tipo in ["Líneas (Tendencia)", "Área (Acumulado)", "Dona (Distribución)", "Barras (Comparación)"] else 0
+            )
 
-            # 3. MULTI-SELECCION DE METRICAS (PANEL COMPUESTO)
+            # 3. MULTI-SELECCIÓN DE MÉTRICAS (PANEL COMPUESTO)
             metrics_opciones = [c for c in cols_num if anio_sel in c or anio_sel == "General"]
             if not metrics_opciones:
                 metrics_opciones = cols_num
@@ -310,7 +321,7 @@ def ejecutar(df_base, fuente_activa=None):
                 partes = [p.strip() for p in col.split(" | ")]
                 return " ➔ ".join(partes[:-1]) if len(partes) > 1 else col
 
-            st.markdown("<h5 style='color: #38bdf8;'>3. Selecciona las metricas para construir la cuadricula del Dashboard:</h5>", unsafe_allow_html=True)
+            st.markdown("<h5 style='color: #38bdf8;'>4. Selecciona las métricas para construir la cuadrícula del Dashboard:</h5>", unsafe_allow_html=True)
             metricas_seleccionadas = st.multiselect(
                 "Selecciona Cajas, Embolse, Ratio, Merma, etc.",
                 options=metrics_opciones,
@@ -321,9 +332,9 @@ def ejecutar(df_base, fuente_activa=None):
 
             st.markdown("<br>", unsafe_allow_html=True)
 
-            # 4. RENDERIZADO DEL DASHBOARD MULTI-PANEL
+            # 4. RENDERIZADO DEL DASHBOARD MULTI-PANEL CON DIVERSIDAD GRÁFICA
             if not metricas_seleccionadas:
-                st.info("Selecciona al menos una metrica en el cuadro superior para desplegar el panel.")
+                st.info("Selecciona al menos una métrica en el cuadro superior para desplegar el panel.")
             else:
                 for i in range(0, len(metricas_seleccionadas), 2):
                     cols_grid = st.columns(2)
@@ -334,7 +345,7 @@ def ejecutar(df_base, fuente_activa=None):
                             
                             df_g = df_norm.groupby(eje_seleccionado)[metric_col].sum().reset_index(name='Valor')
                             
-                            # LIMPIEZA ESTRICA DE SEMANAS Y CATEGORIAS (Sin decimales .0)
+                            # Limpieza estricta de semanas / enteros
                             df_g[eje_seleccionado] = df_g[eje_seleccionado].apply(
                                 lambda x: str(int(float(x))) if pd.notna(x) and str(x).replace('.','',1).isdigit() else str(x) if pd.notna(x) else ""
                             )
@@ -348,30 +359,74 @@ def ejecutar(df_base, fuente_activa=None):
                             df_g['Orden'] = df_g[eje_seleccionado].apply(clave_orden)
                             df_g = df_g.sort_values('Orden').drop(columns=['Orden'])
 
-                            fig = px.bar(
-                                df_g, 
-                                x=eje_seleccionado, 
-                                y='Valor',
-                                text='Valor',
-                                template="plotly_dark",
-                                color='Valor',
-                                color_continuous_scale="Electric"
-                            )
-
                             unidad_fmt = "$" if semantica.get(metric_col) == "moneda" else ""
-                            
-                            fig.update_traces(
-                                texttemplate=f"{unidad_fmt}%{{text:,.0f}}", 
-                                textposition="outside",
-                                cliponaxis=False,
-                                hovertemplate=f"<b>{eje_seleccionado}:</b> %{{x}}<br><b>Valor:</b> {unidad_fmt}%{{y:,.0f}}<extra></extra>",
-                                marker_line_color="#06b6d4",
-                                marker_line_width=1.5,
-                                opacity=0.9
-                            )
-                            
                             nombre_titulo = mapeo_nombre_limpio(metric_col).upper()
                             label_eje = eje_seleccionado.split(" | ")[-1] if " | " in eje_seleccionado else eje_seleccionado
+
+                            # MOTOR DE CONSTRUCCIÓN GRÁFICA MULTI-ESTILO
+                            if "Dona" in tipo_grafico_global:
+                                fig = px.pie(
+                                    df_g, 
+                                    names=eje_seleccionado, 
+                                    values='Valor',
+                                    hole=0.45,
+                                    template="plotly_dark",
+                                    color_discrete_sequence=px.colors.qualitative.Cyan
+                                )
+                                fig.update_traces(
+                                    textinfo="label+percent",
+                                    hovertemplate=f"<b>%{{label}}:</b> {unidad_fmt}%{{value:,.0f}}<extra></extra>"
+                                )
+                            elif "Líneas" in tipo_grafico_global:
+                                fig = px.line(
+                                    df_g, 
+                                    x=eje_seleccionado, 
+                                    y='Valor',
+                                    text='Valor',
+                                    markers=True,
+                                    template="plotly_dark"
+                                )
+                                fig.update_traces(
+                                    texttemplate=f"{unidad_fmt}%{{text:,.0f}}",
+                                    textposition="top center",
+                                    line=dict(width=3, color="#06b6d4"),
+                                    marker=dict(size=8, color="#38bdf8"),
+                                    hovertemplate=f"<b>{eje_seleccionado}:</b> %{{x}}<br><b>Valor:</b> {unidad_fmt}%{{y:,.0f}}<extra></extra>"
+                                )
+                            elif "Área" in tipo_grafico_global:
+                                fig = px.area(
+                                    df_g, 
+                                    x=eje_seleccionado, 
+                                    y='Valor',
+                                    text='Valor',
+                                    template="plotly_dark"
+                                )
+                                fig.update_traces(
+                                    texttemplate=f"{unidad_fmt}%{{text:,.0f}}",
+                                    textposition="top center",
+                                    fillcolor="rgba(6, 182, 212, 0.3)",
+                                    line=dict(width=2, color="#06b6d4"),
+                                    hovertemplate=f"<b>{eje_seleccionado}:</b> %{{x}}<br><b>Valor:</b> {unidad_fmt}%{{y:,.0f}}<extra></extra>"
+                                )
+                            else: # Barras por defecto
+                                fig = px.bar(
+                                    df_g, 
+                                    x=eje_seleccionado, 
+                                    y='Valor',
+                                    text='Valor',
+                                    template="plotly_dark",
+                                    color='Valor',
+                                    color_continuous_scale="Electric"
+                                )
+                                fig.update_traces(
+                                    texttemplate=f"{unidad_fmt}%{{text:,.0f}}", 
+                                    textposition="outside",
+                                    cliponaxis=False,
+                                    hovertemplate=f"<b>{eje_seleccionado}:</b> %{{x}}<br><b>Valor:</b> {unidad_fmt}%{{y:,.0f}}<extra></extra>",
+                                    marker_line_color="#06b6d4",
+                                    marker_line_width=1.5,
+                                    opacity=0.9
+                                )
 
                             fig.update_layout(
                                 title=dict(
@@ -395,7 +450,7 @@ def ejecutar(df_base, fuente_activa=None):
                                 st.plotly_chart(fig, use_container_width=True)
 
     with tab_datos:
-        st.markdown("<h4 style='color: #38bdf8; font-family: Orbitron;'>🗄️ BOVEDA DE DATOS OPERATIVOS NORMALIZADA</h4>", unsafe_allow_html=True)
+        st.markdown("<h4 style='color: #38bdf8; font-family: Orbitron;'>🗄️ BOVEDA DE DATOS NORMALIZADA</h4>", unsafe_allow_html=True)
         df_mostrar = df_norm.copy()
         
         for col in df_mostrar.columns:
