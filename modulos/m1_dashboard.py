@@ -1,9 +1,9 @@
 """
 MOTOR B2B IMPULSADO POR AGENTE IA (GÉNESIS ORQUESTRATOR)
 ========================================================================
-- Compatibilidad Absoluta: Corrección de applymap para Pandas 2.2.0+.
-- Empty State: Pantalla de bienvenida elegante cuando no hay datos.
-- Agente IA: Mapea la estructura del archivo entrante autónomamente.
+- Estética Corporativa: Diseño Navy & Gold (Sobrio y elegante).
+- Formateo Inteligente: Detección de moneda y abreviación de cifras grandes (M, B).
+- Agente IA: Selección de gráficos basada en la densidad y tipo de datos.
 """
 import io
 import json
@@ -23,27 +23,61 @@ try:
 except Exception:
     _GENAI_OK = False
 
-PALETA_NEON = ["#06b6d4", "#38bdf8", "#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899"]
+# Paleta Corporativa Elegante (Dorados, Azules, Verdes sobrios)
+PALETA_CORP = ["#eab308", "#3b82f6", "#10b981", "#6366f1", "#f43f5e", "#8b5cf6"]
 VALORES_NULOS = {"none", "nan", "nat", "null", "n/a", "#n/a", "-", "--", ""}
 
-def fmt_es(valor, decimales=0, prefijo="", sufijo=""):
-    if pd.isna(valor) or valor == "": return "0"
-    try: v = float(valor)
-    except Exception: return str(valor)
-    texto = f"{v:,.{decimales}f}".replace(",", "§").replace(".", ",").replace("§", ".")
-    return f"{prefijo}{texto}{sufijo}"
+def format_kpi(val, col_name):
+    """Formatea números grandes con M/B y detecta si es moneda automáticamente."""
+    is_currency = any(x in str(col_name).lower() for x in ['costo', 'precio', 'valor', 'cop', 'usd', 'monto', 'ingreso'])
+    if pd.isna(val): return "$ 0" if is_currency else "0"
+    
+    prefix = "$ " if is_currency else ""
+    
+    # Abreviación para tarjetas KPI
+    if abs(val) >= 1_000_000_000:
+        return f"{prefix}{val/1_000_000_000:,.2f} B".replace(",", "§").replace(".", ",").replace("§", ".")
+    elif abs(val) >= 1_000_000:
+        return f"{prefix}{val/1_000_000:,.2f} M".replace(",", "§").replace(".", ",").replace("§", ".")
+    else:
+        return f"{prefix}{val:,.0f}".replace(",", "§").replace(".", ",").replace("§", ".")
 
 def obtener_nombre_limpio(col_completa):
-    if not col_completa or pd.isna(col_completa): return "Métrica Operativa"
-    partes = [p.strip() for p in str(col_completa).split(" | ") if p.strip()]
-    if not partes: return str(col_completa)
+    """Limpia guiones bajos y extrae un título legible."""
+    if not col_completa or pd.isna(col_completa): return "Métrica"
+    
+    # Limpiar guiones bajos
+    texto_limpio = str(col_completa).replace("_", " ")
+    
+    partes = [p.strip() for p in texto_limpio.split(" | ") if p.strip()]
+    if not partes: return texto_limpio.title()
+    
     if len(partes) >= 2:
         anio = partes[-1] if re.match(r'^\d{4}$', partes[-1]) else ""
         métrica = partes[-2] if anio and len(partes)>=2 else partes[-1]
         modulo = partes[0] if len(partes) >= 3 else ""
         prefijo = f"{modulo} - " if modulo and modulo != métrica else ""
-        return f"{prefijo}{métrica} ({anio})" if anio else f"{prefijo}{métrica}"
-    return partes[0]
+        resultado = f"{prefijo}{métrica} ({anio})" if anio else f"{prefijo}{métrica}"
+        return resultado.title()
+        
+    return partes[0].title()
+
+def sugerir_grafico(df, eje_x, metrica):
+    """La IA determina el mejor gráfico analizando los datos reales."""
+    if df.empty or eje_x not in df.columns: return "Barras (Comparación)"
+    
+    unique_x = df[eje_x].nunique()
+    x_lower = str(eje_x).lower()
+    metrica_lower = str(metrica).lower()
+    
+    if unique_x <= 6 and not any(t in x_lower for t in ['semana', 'fecha', 'mes', 'año']):
+        return "Dona (Distribución)"
+    elif any(t in x_lower for t in ['semana', 'fecha', 'mes', 'año', 'date']):
+        return "Líneas (Tendencia)"
+    elif any(t in metrica_lower for t in ['acumulado', 'total', 'crecimiento']):
+        return "Área (Acumulado)"
+    else:
+        return "Barras (Comparación)"
 
 def cazador_de_encabezados(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
     origen = "Archivo Base"
@@ -62,8 +96,6 @@ def cazador_de_encabezados(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
             break
 
     df_headers = df_search.iloc[0:max(1, data_idx)].copy()
-    
-    # FIX PANDAS 2.2.0+: Usar apply con map en lugar de applymap
     df_headers = df_headers.apply(lambda col: col.map(
         lambda v: np.nan if pd.isna(v) or 'unnamed' in str(v).lower() or str(v).strip() == '' else str(v).strip()
     ))
@@ -97,8 +129,6 @@ def cazador_de_encabezados(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
 @st.cache_data(show_spinner=False)
 def procesar_archivo(df_raw: pd.DataFrame) -> Dict[str, Any]:
     df, origen = cazador_de_encabezados(df_raw)
-    
-    # FIX PANDAS 2.2.0+: Usar apply con map en lugar de applymap
     df = df.apply(lambda col: col.map(lambda v: np.nan if str(v).lower().strip() in VALORES_NULOS else v))
     
     for col in df.columns:
@@ -118,7 +148,7 @@ class AgenteOrquestador:
     def planear_y_organizar(self):
         for col in self.columnas:
             serie = self.df[col].dropna()
-            if pd.api.types.is_numeric_dtype(serie) and not any(p in col.lower() for p in ['semana', 'código', 'id', 'cinta']):
+            if pd.api.types.is_numeric_dtype(serie) and not any(p in col.lower() for p in ['semana', 'código', 'id', 'cinta', 'nit', 'documento']):
                 self.metricas.append(col)
             elif len(serie.unique()) < 100:
                 self.dimensiones.append(col)
@@ -138,7 +168,7 @@ class AgenteOrquestador:
                 
             if modulo not in self.modulos: self.modulos[modulo] = []
             self.modulos[modulo].append(col)
-            self.mapeo_nombres[col] = f"{metrica_base} ({anio})" if anio else metrica_base
+            self.mapeo_nombres[col] = obtener_nombre_limpio(col)
 
         self.dimensiones = sorted(self.dimensiones, key=lambda x: (0 if 'cinta' in x.lower() else 1 if 'semana' in x.lower() else 2))
         if not self.dimensiones: self.dimensiones = self.columnas[:1]
@@ -150,7 +180,7 @@ class AgenteOrquestador:
             if not api_key: return self._fallback_insight()
             genai.configure(api_key=api_key)
             prompt = f"""
-            Eres el Director de Operaciones IA de la plataforma. Analiza estos datos: {self.df.head(3).to_json()}
+            Eres el Director de Operaciones IA. Analiza estos datos: {self.df.head(3).to_json()}
             Devuelve un diagnóstico en JSON:
             {{
                 "titulo": "ANÁLISIS ESTRATÉGICO DE OPERACIONES",
@@ -166,59 +196,66 @@ class AgenteOrquestador:
 
     def _fallback_insight(self):
         return {
-            "titulo": "SISTEMA ORQUESTADOR ACTIVO",
-            "resumen": "La Inteligencia Artificial ha mapeado la topografía del archivo exitosamente.",
-            "alertas": ["Control: Supervise la correlación entre variables principales.", "Optimización: Utilice el filtro temporal para análisis aislados."]
+            "titulo": "SISTEMA ORQUESTADOR EN LÍNEA",
+            "resumen": "Mapeo topográfico completado. Dimensiones y métricas financieras catalogadas.",
+            "alertas": ["Control: Verifique las tendencias de costos contra los niveles de alerta mínima.", "Optimización: Aísle los indicadores clave utilizando los selectores de rango de tiempo."]
         }
 
 def inyectar_css():
     st.markdown("""
     <style>
         @import url('[https://fonts.googleapis.com/css2?family=Orbitron:wght@500;800;900&family=Rajdhani:wght@500;600;700&display=swap](https://fonts.googleapis.com/css2?family=Orbitron:wght@500;800;900&family=Rajdhani:wght@500;600;700&display=swap)');
-        .main { background-color: #0b0f19; }
-        .title-bar { color: #38bdf8; font-family: 'Orbitron', sans-serif; font-size: 24px; font-weight: 800; border-bottom: 2px solid #1e293b; padding-bottom: 12px; margin-bottom: 20px; } 
-        .source-badge { display: inline-block; background: rgba(15, 23, 42, 0.8); border: 1px solid #38bdf8; color: #38bdf8; padding: 4px 12px; border-radius: 20px; font-family: 'Rajdhani', sans-serif; font-size: 13px; font-weight: 700; margin-bottom: 18px; }
-        .ia-card { background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.8)); border-left: 5px solid #10b981; padding: 22px; border-radius: 12px; margin-bottom: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); } 
-        .ia-title { color: #10b981; font-family: 'Orbitron', sans-serif; font-size: 14px; font-weight: 800; margin-bottom: 10px; } 
-        .ia-summary { color: #e2e8f0; font-family: 'Rajdhani', sans-serif; font-size: 17px; font-weight: 500; line-height: 1.5; margin-bottom: 12px; } 
-        .ia-alert { color: #fb7185; font-family: 'Rajdhani', sans-serif; font-size: 15px; font-weight: 700; margin-top: 6px; padding-left: 10px; border-left: 3px solid #fb7185; } 
-        .kpi-card { background: rgba(15, 23, 42, 0.85); padding: 16px; border-radius: 10px; border: 1px solid rgba(56, 189, 248, 0.2); border-top: 4px solid #38bdf8; min-height: 110px; }
-        .kpi-title { font-family: 'Rajdhani', sans-serif; font-size: 14px; color: #38bdf8; font-weight: 700; text-transform: uppercase; line-height: 1.2; } 
-        .kpi-val { font-family: 'Orbitron', sans-serif; font-size: 24px; color: #ffffff; font-weight: 800; margin-top: 8px; text-shadow: 0 0 10px rgba(56, 189, 248, 0.3); }
-        .chart-box { background: rgba(15, 23, 42, 0.6); padding: 15px; border-radius: 12px; border: 1px solid #1e293b; margin-bottom: 20px; }
+        
+        /* Paleta Corporativa Elegante (Navy & Gold) */
+        .main { background-color: #0b1120; }
+        
+        /* Títulos limpios */
+        .title-bar { color: #eab308; font-family: 'Orbitron', sans-serif; font-size: 22px; font-weight: 800; border-bottom: 1px solid #1e293b; padding-bottom: 12px; margin-bottom: 20px; letter-spacing: 1px; } 
+        .source-badge { display: inline-block; background: #1e293b; border: 1px solid #334155; color: #94a3b8; padding: 4px 12px; border-radius: 4px; font-family: 'Rajdhani', sans-serif; font-size: 13px; font-weight: 700; margin-bottom: 18px; }
+        
+        /* Tarjeta IA */
+        .ia-card { background: #111827; border-left: 4px solid #eab308; padding: 20px; border-radius: 8px; margin-bottom: 25px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5); } 
+        .ia-title { color: #eab308; font-family: 'Orbitron', sans-serif; font-size: 13px; font-weight: 800; margin-bottom: 10px; text-transform: uppercase; } 
+        .ia-summary { color: #d1d5db; font-family: 'Rajdhani', sans-serif; font-size: 16px; font-weight: 500; line-height: 1.5; margin-bottom: 12px; } 
+        .ia-alert { color: #fb7185; font-family: 'Rajdhani', sans-serif; font-size: 14px; font-weight: 600; margin-top: 6px; padding-left: 10px; border-left: 2px solid #fb7185; } 
+        
+        /* Tarjetas KPI sin neón, centradas y limpias */
+        .kpi-card { background: #111827; padding: 18px 15px; border-radius: 8px; border: 1px solid #1f2937; border-top: 3px solid #3b82f6; display: flex; flex-direction: column; justify-content: center; min-height: 110px; }
+        .kpi-title { font-family: 'Rajdhani', sans-serif; font-size: 12px; color: #9ca3af; font-weight: 700; text-transform: uppercase; line-height: 1.3; word-wrap: break-word; } 
+        .kpi-val { font-family: 'Orbitron', sans-serif; font-size: 24px; color: #f3f4f6; font-weight: 800; margin-top: 6px; word-break: break-word; }
+        
+        /* Cajas de Gráficos */
+        .chart-box { background: #111827; padding: 15px; border-radius: 8px; border: 1px solid #1f2937; margin-bottom: 20px; }
     </style>
     """, unsafe_allow_html=True)
 
 def ejecutar(df_base, fuente_activa=None):
     inyectar_css()
 
+    # ==========================================
+    # 1. ESTADO VACÍO (WELCOME SCREEN CORPORATIVO)
+    # ==========================================
     if df_base is None or df_base.empty:
-        st.markdown("<div class='title-bar'>⚡ GÉNESIS IA : ESPERANDO INGESTA DE DATOS</div>", unsafe_allow_html=True)
+        st.markdown("<div class='title-bar'>PANEL GERENCIAL DE OPERACIONES</div>", unsafe_allow_html=True)
         st.markdown("""
-        <div style='background: linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(30, 41, 59, 0.8)); border-left: 5px solid #38bdf8; padding: 40px; border-radius: 12px; margin-top: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center;'>
-            <h2 style='color: #38bdf8; font-family: Orbitron; margin-bottom: 15px;'>BIENVENIDO AL CENTRO DE MANDO B2B</h2>
-            <p style='color: #e2e8f0; font-family: Rajdhani; font-size: 20px; line-height: 1.6;'>
-                El Orquestador de Inteligencia Artificial está en línea y a la espera de información.<br>
-                <strong>Por favor, sube un archivo de operaciones (Excel/CSV) en el panel lateral para iniciar.</strong>
+        <div style='background: #111827; border-left: 4px solid #3b82f6; padding: 40px; border-radius: 8px; margin-top: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.5); text-align: center;'>
+            <h2 style='color: #f3f4f6; font-family: Orbitron; margin-bottom: 15px;'>SISTEMA EN ESPERA DE DATOS</h2>
+            <p style='color: #9ca3af; font-family: Rajdhani; font-size: 18px; line-height: 1.6;'>
+                El Orquestador de Inteligencia Artificial está en línea.<br>
+                <strong>Por favor, suba un archivo (Excel/CSV) en el panel lateral para iniciar el análisis automático.</strong>
             </p>
-            <hr style='border-color: #1e293b; margin: 30px 0;'>
-            <div style='text-align: left; padding: 0 20px;'>
-                <h4 style='color: #10b981; font-family: Orbitron; font-size: 16px; margin-bottom: 15px;'>🚀 ¿CÓMO OPERA GÉNESIS IA?</h4>
-                <p style='color: #94a3b8; font-family: Rajdhani; font-size: 17px;'>
-                    <strong style='color:#f8fafc;'>1. Ojos Clínicos:</strong> Escaneará la topografía de tu archivo, aplanará encabezados complejos y limpiará la basura de los datos automáticamente.<br><br>
-                    <strong style='color:#f8fafc;'>2. Diseño Autónomo:</strong> Determinará cuáles son tus Ejes Operativos (ej. Cinta/Semana) y sugerirá las visualizaciones más lógicas para cada métrica.<br><br>
-                    <strong style='color:#f8fafc;'>3. Asesoría Estratégica:</strong> Leerá los resultados financieros y operativos para entregarte alertas tácticas directas a la toma de decisiones.
-                </p>
-            </div>
         </div>
         """, unsafe_allow_html=True)
         return
 
+    # ==========================================
+    # 2. EJECUCIÓN DEL AGENTE (CON DATOS)
+    # ==========================================
     if "ultima_fuente" not in st.session_state or st.session_state["ultima_fuente"] != fuente_activa:
         st.session_state["ultima_fuente"] = fuente_activa
         st.cache_data.clear()
 
-    with st.spinner("La IA está mapeando y organizando la topografía de los datos..."):
+    with st.spinner("La IA está mapeando y estructurando la información..."):
         res = procesar_archivo(df_base)
         df_norm = res["df"]
         
@@ -230,14 +267,14 @@ def ejecutar(df_base, fuente_activa=None):
         agente.planear_y_organizar()
         insights = agente.generar_insights()
 
-    st.markdown(f"<div class='title-bar'>⚡ {insights.get('titulo', 'COMMAND CENTER')}</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='source-badge'>📄 ORIGEN: {res['origen']}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='title-bar'>{insights.get('titulo', 'PANEL GERENCIAL').upper()}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='source-badge'>📁 {res['origen']}</div>", unsafe_allow_html=True)
 
     alerts = "".join([f"<div class='ia-alert'>⚠️ {alerta}</div>" for alerta in insights.get('alertas', [])])
     st.markdown(
         f"""
         <div class='ia-card'>
-            <div class='ia-title'>🤖 REPORTE DEL ORQUESTADOR IA</div>
+            <div class='ia-title'>🤖 DIAGNÓSTICO TÁCTICO IA</div>
             <div class='ia-summary'>{insights.get('resumen', '')}</div>
             <div>{alerts}</div>
         </div>
@@ -252,18 +289,20 @@ def ejecutar(df_base, fuente_activa=None):
             st.warning("La IA no detectó métricas numéricas graficables en este archivo.")
             st.stop()
 
+        # TARJETAS KPI CON FORMATO INTELIGENTE Y ABREVIACIONES
         kpi_cols = st.columns(min(4, len(agente.metricas)))
         for i, col in enumerate(agente.metricas[:4]):
             val_sum = df_norm[col].sum()
-            formato = f"{val_sum:,.0f}".replace(",", ".")
             nombre_kpi = agente.mapeo_nombres.get(col, col)
+            formato = format_kpi(val_sum, col)
+            
             with kpi_cols[i]:
                 st.markdown(f"<div class='kpi-card'><div class='kpi-title'>{nombre_kpi}</div><div class='kpi-val'>{formato}</div></div>", unsafe_allow_html=True)
         
-        st.markdown("<br><hr style='border-color: #1e293b;'><br>", unsafe_allow_html=True)
+        st.markdown("<br><hr style='border-color: #1f2937;'><br>", unsafe_allow_html=True)
 
         c1, c2, c3, c4 = st.columns([1.2, 0.8, 1.0, 1.0])
-        eje_x = c1.selectbox("1. Dimensión Analítica (Eje X):", agente.dimensiones, format_func=lambda x: x.split(" | ")[-1])
+        eje_x = c1.selectbox("1. Dimensión Analítica (Eje X):", agente.dimensiones, format_func=lambda x: obtener_nombre_limpio(x))
         anio_sel = c2.selectbox("2. Año:", ["TODOS"] + agente.anios)
 
         col_semana = next((c for c in df_norm.columns if "semana" in c.lower()), None)
@@ -273,8 +312,8 @@ def ejecutar(df_base, fuente_activa=None):
             semanas = sorted([int(float(str(v))) for v in df_norm[col_semana].dropna().unique() if str(v).replace('.', '', 1).isdigit()])
             if not semanas: semanas = [1, 52]
             
-            s_ini = c3.selectbox("3. Sem. Inicial:", semanas, index=0)
-            s_fin = c4.selectbox("4. Sem. Final:", semanas, index=len(semanas)-1)
+            s_ini = c3.selectbox("3. Inicio (Secuencia):", semanas, index=0)
+            s_fin = c4.selectbox("4. Fin (Secuencia):", semanas, index=len(semanas)-1)
             
             df_filtrado = df_filtrado[df_filtrado[col_semana].apply(lambda x: s_ini <= int(float(str(x))) <= s_fin if pd.notna(x) and str(x).replace('.','',1).isdigit() else True)]
 
@@ -305,9 +344,13 @@ def ejecutar(df_base, fuente_activa=None):
                         with grid[j]:
                             st.markdown("<div class='chart-box'>", unsafe_allow_html=True)
                             c_hdr, c_tipo = st.columns([1.5, 1.0])
-                            c_hdr.markdown(f"<span style='color:#38bdf8; font-family:Orbitron; font-size:13px; font-weight:800;'>{alias.upper()}</span>", unsafe_allow_html=True)
                             
-                            sugerencia = "Dona (Distribución)" if "cinta" in eje_x.lower() else "Líneas (Tendencia)" if "semana" in eje_x.lower() else "Barras (Comparación)"
+                            # Título con contexto (Ej: STOCK FÍSICO POR CATEGORÍA)
+                            titulo_grafico = f"{alias} por {obtener_nombre_limpio(eje_x)}"
+                            c_hdr.markdown(f"<span style='color:#9ca3af; font-family:Rajdhani; font-size:14px; font-weight:700; text-transform:uppercase;'>{titulo_grafico}</span>", unsafe_allow_html=True)
+                            
+                            # Sugerencia inteligente del gráfico
+                            sugerencia = sugerir_grafico(df_filtrado, eje_x, m_col)
                             tipo_grafico = c_tipo.selectbox("Tipo:", ["Barras (Comparación)", "Líneas (Tendencia)", "Área (Acumulado)", "Dona (Distribución)"], index=["Barras (Comparación)", "Líneas (Tendencia)", "Área (Acumulado)", "Dona (Distribución)"].index(sugerencia), key=f"g_{m_col}", label_visibility="collapsed")
                             
                             df_g = df_filtrado.groupby(eje_x)[m_col].sum().reset_index(name='Valor')
@@ -315,31 +358,34 @@ def ejecutar(df_base, fuente_activa=None):
                             df_g['Orden'] = df_g[eje_x].apply(lambda x: int(x) if str(x).isdigit() else str(x))
                             df_g = df_g.sort_values('Orden').drop(columns=['Orden'])
 
+                            is_currency = any(x in str(m_col).lower() for x in ['costo', 'precio', 'valor', 'cop', 'usd', 'monto'])
+                            unidad_fmt = "$ " if is_currency else ""
+
                             if "Dona" in tipo_grafico:
-                                fig = px.pie(df_g, names=eje_x, values='Valor', hole=0.45, template="plotly_dark", color_discrete_sequence=PALETA_NEON)
-                                fig.update_traces(textinfo="label+percent", hovertemplate=f"<b>%{{label}}:</b> %{{value:,.0f}}<extra></extra>")
+                                fig = px.pie(df_g, names=eje_x, values='Valor', hole=0.45, template="plotly_dark", color_discrete_sequence=PALETA_CORP)
+                                fig.update_traces(textinfo="label+percent", hovertemplate=f"<b>%{{label}}:</b> {unidad_fmt}%{{value:,.0f}}<extra></extra>")
                             elif "Líneas" in tipo_grafico:
                                 fig = px.line(df_g, x=eje_x, y='Valor', text='Valor', markers=True, template="plotly_dark")
-                                fig.update_traces(texttemplate="%{text:,.0f}", textposition="top center", line=dict(width=3, color="#06b6d4"), marker=dict(size=8, color="#38bdf8"), hovertemplate=f"<b>{eje_x}:</b> %{{x}}<br><b>Valor:</b> %{{y:,.0f}}<extra></extra>")
+                                fig.update_traces(texttemplate="%{text:,.2s}", textposition="top center", line=dict(width=3, color="#3b82f6"), marker=dict(size=8, color="#eab308"), hovertemplate=f"<b>{eje_x}:</b> %{{x}}<br><b>Valor:</b> {unidad_fmt}%{{y:,.0f}}<extra></extra>")
                             elif "Área" in tipo_grafico:
                                 fig = px.area(df_g, x=eje_x, y='Valor', text='Valor', template="plotly_dark")
-                                fig.update_traces(texttemplate="%{text:,.0f}", textposition="top center", fillcolor="rgba(6, 182, 212, 0.3)", line=dict(width=2, color="#06b6d4"), hovertemplate=f"<b>{eje_x}:</b> %{{x}}<br><b>Valor:</b> %{{y:,.0f}}<extra></extra>")
+                                fig.update_traces(texttemplate="%{text:,.2s}", textposition="top center", fillcolor="rgba(59, 130, 246, 0.2)", line=dict(width=2, color="#3b82f6"), hovertemplate=f"<b>{eje_x}:</b> %{{x}}<br><b>Valor:</b> {unidad_fmt}%{{y:,.0f}}<extra></extra>")
                             else:
-                                fig = px.bar(df_g, x=eje_x, y='Valor', text='Valor', template="plotly_dark", color='Valor', color_continuous_scale="Electric")
-                                fig.update_traces(texttemplate="%{text:,.0f}", textposition="outside", cliponaxis=False, hovertemplate=f"<b>{eje_x}:</b> %{{x}}<br><b>Valor:</b> %{{y:,.0f}}<extra></extra>", marker_line_color="#06b6d4", marker_line_width=1.5, opacity=0.9)
+                                fig = px.bar(df_g, x=eje_x, y='Valor', text='Valor', template="plotly_dark", color_discrete_sequence=[PALETA_CORP[0]])
+                                fig.update_traces(texttemplate="%{text:,.2s}", textposition="outside", cliponaxis=False, hovertemplate=f"<b>{eje_x}:</b> %{{x}}<br><b>Valor:</b> {unidad_fmt}%{{y:,.0f}}<extra></extra>", marker_line_color="#1e293b", marker_line_width=1)
 
                             fig.update_layout(
-                                paper_bgcolor='rgba(11, 15, 25, 0)', plot_bgcolor='rgba(15, 23, 42, 0.5)',
-                                xaxis=dict(title=dict(text=eje_x.split(" | ")[-1], font=dict(color='#94a3b8')), tickfont=dict(color='#cbd5e1'), type='category'),
-                                yaxis=dict(title=dict(text="Volumen", font=dict(color='#94a3b8')), tickfont=dict(color='#cbd5e1')),
-                                coloraxis_showscale=False, margin=dict(l=10, r=10, t=20, b=30), height=340
+                                paper_bgcolor='rgba(11, 15, 25, 0)', plot_bgcolor='rgba(11, 15, 25, 0)',
+                                xaxis=dict(title=dict(text="", font=dict(color='#94a3b8')), tickfont=dict(color='#9ca3af'), type='category'),
+                                yaxis=dict(title=dict(text="", font=dict(color='#94a3b8')), tickfont=dict(color='#9ca3af'), showgrid=True, gridcolor='#1f2937'),
+                                coloraxis_showscale=False, margin=dict(l=10, r=10, t=20, b=30), height=320
                             )
 
                             st.plotly_chart(fig, use_container_width=True)
                             st.markdown("</div>", unsafe_allow_html=True)
 
     with tab_datos:
-        st.markdown("<h4 style='color: #38bdf8; font-family: Orbitron;'>🗄️ BOVEDA DE DATOS</h4>", unsafe_allow_html=True)
+        st.markdown("<h4 style='color: #eab308; font-family: Orbitron;'>🗄️ BOVEDA DE DATOS</h4>", unsafe_allow_html=True)
         df_mostrar = df_norm.copy()
         for col in df_mostrar.columns:
             if "semana" in col.lower() or "cinta" in col.lower():
