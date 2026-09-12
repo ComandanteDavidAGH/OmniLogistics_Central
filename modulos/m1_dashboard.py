@@ -1,9 +1,9 @@
 """
-MOTOR B2B (MATRIZ PURA - HERENCIA ESTRICTA Y AUDITORÍA)
+MOTOR B2B (MATRIZ PURA - RELLENO GEOMÉTRICO ANTI-FUGAS)
 ========================================================================
-- Parche Dtype: Conversión a 'object' para evitar TypeError al hacer ffill.
-- Anclaje Severo: Solo lee las 2 filas estrictamente anteriores al Ecuador.
-- Freno Horizontal: Previene que celdas combinadas "pisen" otros dominios.
+- Relleno 2D: ffill vertical seguido de ffill horizontal para evitar que 
+  categorías adyacentes invadan celdas combinadas verticalmente.
+- Auditoría visual y diseño piramidal anclado.
 """
 import re
 import pandas as pd
@@ -28,6 +28,7 @@ def extractor_logico_estricto(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
         origen = str(df_raw["_Origen_Archivo"].dropna().iloc[0]) if not df_raw["_Origen_Archivo"].dropna().empty else origen
         df_raw = df_raw.drop(columns=["_Origen_Archivo"])
 
+    # 1. Búsqueda del Ecuador
     fila_eje = 0
     for i in range(min(20, len(df_raw))):
         text_row = " ".join([str(x).lower() for x in df_raw.iloc[i] if pd.notna(x)])
@@ -35,6 +36,7 @@ def extractor_logico_estricto(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
             fila_eje = i
             break
 
+    # 2. Búsqueda de Años
     fin_encabezados = fila_eje
     if fila_eje + 1 < len(df_raw):
         vals = [str(x).replace('.0','') for x in df_raw.iloc[fila_eje + 1] if pd.notna(x)]
@@ -43,17 +45,19 @@ def extractor_logico_estricto(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
 
     ecuador_datos = fin_encabezados + 1
 
+    # 3. Herencia Estricta (El Truco Geométrico Anti-Fugas)
     inicio_encabezados = max(0, fila_eje - 1) 
     df_headers = df_raw.iloc[inicio_encabezados:fin_encabezados + 1].copy()
     
-    # PARCHE DE SEGURIDAD DTYPE: Convertir a 'object' para permitir ffill de texto sobre números
+    # Parche de seguridad Dtype
     df_headers = df_headers.astype(object)
     
-    # Relleno Inteligente (Freno Horizontal)
-    # Rellenamos solo las filas superiores; la última fila (años) NO se rellena.
-    if len(df_headers) > 1:
-        df_headers.iloc[:-1] = df_headers.iloc[:-1].ffill(axis=1)
+    # PASO 1: Relleno Vertical (Gravedad). Tapa los huecos de las celdas altas (Ej. MANOS)
+    df_headers = df_headers.ffill(axis=0)
+    # PASO 2: Relleno Horizontal. Extiende celdas anchas (Ej. MERMA), pero respeta los muros.
+    df_headers = df_headers.ffill(axis=1)
 
+    # 4. Linaje Vertical
     nuevas_cols = []
     for col_idx in range(len(df_headers.columns)):
         jerarquia = []
@@ -63,6 +67,7 @@ def extractor_logico_estricto(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
                 texto = str(val).replace('.0', '').strip()
                 texto = re.sub(r'\b20\d{2}(?:\s*-\s*20\d{2})+\b', '', texto).strip('- ')
                 
+                # Ignora títulos basura largos
                 if len(texto) > 30 and "año" in texto.lower(): continue 
                 
                 texto_format = " ".join(texto.split()).title() if not texto.isdigit() else " ".join(texto.split())
@@ -79,6 +84,7 @@ def extractor_logico_estricto(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
         nombre_final = "<br>".join(jerarquia)
         nuevas_cols.append(nombre_final)
 
+    # 5. Aplicación a la Matriz de Datos
     df_datos = df_raw.iloc[ecuador_datos:].copy()
     
     cols_unicas, conteo = [], {}
@@ -178,7 +184,7 @@ def ejecutar(df_base, fuente_activa=None):
         st.session_state["ultima_fuente"] = fuente_activa
         st.cache_data.clear()
 
-    with st.spinner("Reconstruyendo arquitectura jerárquica con tipado seguro..."):
+    with st.spinner("Reconstruyendo arquitectura jerárquica con relleno geométrico..."):
         df_norm, origen = extractor_logico_estricto(df_base)
         if df_norm.empty:
             st.error("⚠️ El archivo quedó vacío tras la extracción.")
