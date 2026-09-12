@@ -1,9 +1,9 @@
 """
-MOTOR B2B (MATRIZ PURA - INMOVILIZACIÓN DE PANELES)
+MOTOR B2B (MATRIZ PURA - HERENCIA ESTRICTA Y AUDITORÍA)
 ========================================================================
-- Interruptor Dinámico: Permite inmovilizar (congelar) columnas al estilo Excel.
-- Diseño Piramidal y Formato LATAM intactos.
-- Preparado como cimiento definitivo para el Dashboard.
+- Anclaje Severo: Solo lee las 2 filas estrictamente anteriores al Ecuador.
+- Freno Horizontal: Previene que celdas combinadas "pisen" otros dominios.
+- Anotación de Errores: Marca con ⚠️ encabezados dudosos.
 """
 import re
 import pandas as pd
@@ -22,12 +22,13 @@ def format_latam(valor):
     except Exception:
         return str(valor)
 
-def extractor_logico_universal(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
+def extractor_logico_estricto(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
     origen = "Archivo Base"
     if "_Origen_Archivo" in df_raw.columns:
         origen = str(df_raw["_Origen_Archivo"].dropna().iloc[0]) if not df_raw["_Origen_Archivo"].dropna().empty else origen
         df_raw = df_raw.drop(columns=["_Origen_Archivo"])
 
+    # 1. Búsqueda del Ecuador
     fila_eje = 0
     for i in range(min(20, len(df_raw))):
         text_row = " ".join([str(x).lower() for x in df_raw.iloc[i] if pd.notna(x)])
@@ -35,6 +36,7 @@ def extractor_logico_universal(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]
             fila_eje = i
             break
 
+    # 2. Búsqueda de Años
     fin_encabezados = fila_eje
     if fila_eje + 1 < len(df_raw):
         vals = [str(x).replace('.0','') for x in df_raw.iloc[fila_eje + 1] if pd.notna(x)]
@@ -43,9 +45,17 @@ def extractor_logico_universal(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]
 
     ecuador_datos = fin_encabezados + 1
 
-    inicio_encabezados = max(0, fila_eje - 2)
-    df_headers = df_raw.iloc[inicio_encabezados:fin_encabezados + 1].copy().ffill(axis=1)
+    # 3. Herencia Estricta (Solo 2 filas arriba, bloqueando títulos gigantes)
+    # Ejemplo: Si el eje es 4, solo toma las filas 3, 4 y 5. Ignora la 2 o la 1.
+    inicio_encabezados = max(0, fila_eje - 1) 
+    df_headers = df_raw.iloc[inicio_encabezados:fin_encabezados + 1].copy()
+    
+    # Relleno Inteligente (Freno Horizontal)
+    # Solo rellenamos las filas superiores. La fila de años (la última) NO se rellena.
+    for i in range(len(df_headers) - 1):
+        df_headers.iloc[i] = df_headers.iloc[i].ffill()
 
+    # 4. Linaje Vertical
     nuevas_cols = []
     for col_idx in range(len(df_headers.columns)):
         jerarquia = []
@@ -53,15 +63,24 @@ def extractor_logico_universal(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]
             val = df_headers.iloc[f_idx, col_idx]
             if pd.notna(val) and str(val).strip() != "" and str(val).lower() != 'nan':
                 texto = str(val).replace('.0', '').strip()
-                if len(texto) > 40: continue 
                 texto = re.sub(r'\b20\d{2}(?:\s*-\s*20\d{2})+\b', '', texto).strip('- ')
+                
+                # Eliminación agresiva de títulos basura largos
+                if len(texto) > 30 and "año" in texto.lower(): continue 
+                
                 texto_format = " ".join(texto.split()).title() if not texto.isdigit() else " ".join(texto.split())
                 
                 if texto_format:
                     if not jerarquia or jerarquia[-1].lower() != texto_format.lower():
                         jerarquia.append(texto_format)
         
-        nombre_final = "<br>".join(jerarquia) if jerarquia else f"Col_{col_idx}"
+        # AUDITORÍA DE ERRORES: Si la jerarquía se armó mal o quedó vacía
+        if not jerarquia:
+            jerarquia = [f"⚠️ Fuga_Col_{col_idx}"]
+        elif len(jerarquia) > 4: # Demasiados niveles, posible error
+            jerarquia[0] = "⚠️ " + jerarquia[0]
+            
+        nombre_final = "<br>".join(jerarquia)
         nuevas_cols.append(nombre_final)
 
     df_datos = df_raw.iloc[ecuador_datos:].copy()
@@ -70,7 +89,6 @@ def extractor_logico_universal(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]
     for col in nuevas_cols:
         if col in conteo:
             conteo[col] += 1
-            # Truco de espacios invisibles para evitar duplicados en Pandas
             cols_unicas.append(f"{col}{'&nbsp;' * conteo[col]}")
         else:
             conteo[col] = 0
@@ -95,7 +113,6 @@ def extractor_logico_universal(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]
     return df_datos, origen
 
 def generar_tabla_html_piramidal(df: pd.DataFrame, columnas_fijas: int = 0) -> str:
-    """Genera la tabla inyectando CSS 'sticky' para inmovilizar columnas."""
     html = """
     <div style="overflow: auto; max-height: 60vh; border: 1px solid #1f2937; border-radius: 8px; margin-bottom: 20px; position: relative;">
         <table style="width: 100%; border-collapse: collapse; font-family: 'Rajdhani', sans-serif; background-color: #0b1120; color: #f3f4f6; text-align: center; font-size: 14px;">
@@ -103,9 +120,8 @@ def generar_tabla_html_piramidal(df: pd.DataFrame, columnas_fijas: int = 0) -> s
                 <tr>
     """
     
-    ancho_fijo = 120 # Pixeles estimados por columna inmovilizada
+    ancho_fijo = 120 
     
-    # Encabezados
     for i, col in enumerate(df.columns):
         if i < columnas_fijas:
             left_pos = i * ancho_fijo
@@ -114,11 +130,14 @@ def generar_tabla_html_piramidal(df: pd.DataFrame, columnas_fijas: int = 0) -> s
         else:
             estilo = "z-index: 9;"
             
+        # Resaltador de Errores en rojo
+        if "⚠️" in col:
+            estilo += " color: #f43f5e;"
+            
         html += f"<th style='padding: 12px 15px; border: 1px solid #334155; color: #eab308; font-weight: 700; white-space: nowrap; vertical-align: bottom; {estilo}'>{col}</th>"
     
     html += "</tr></thead><tbody>"
     
-    # Datos
     for _, row in df.iterrows():
         html += "<tr style='border-bottom: 1px solid #1f2937;'>"
         for i, col in enumerate(df.columns):
@@ -156,9 +175,6 @@ def ejecutar(df_base, fuente_activa=None):
         st.markdown("""
         <div style='background: #111827; border-left: 4px solid #3b82f6; padding: 40px; border-radius: 8px; margin-top: 20px; text-align: center;'>
             <h2 style='color: #f3f4f6; font-family: Orbitron; margin-bottom: 15px;'>EN ESPERA DE DATOS</h2>
-            <p style='color: #9ca3af; font-family: Rajdhani; font-size: 18px; line-height: 1.6;'>
-                Sube tu matriz de Excel para activar la Bóveda de Datos.
-            </p>
         </div>
         """, unsafe_allow_html=True)
         return
@@ -167,20 +183,16 @@ def ejecutar(df_base, fuente_activa=None):
         st.session_state["ultima_fuente"] = fuente_activa
         st.cache_data.clear()
 
-    with st.spinner("Procesando estructura base y consolidando jerarquías..."):
-        df_norm, origen = extractor_logico_universal(df_base)
+    with st.spinner("Reconstruyendo arquitectura jerárquica con bloqueo de títulos..."):
+        df_norm, origen = extractor_logico_estricto(df_base)
         if df_norm.empty:
             st.error("⚠️ El archivo quedó vacío tras la extracción.")
             st.stop()
 
-    st.markdown("<div class='title-bar'>BÓVEDA DE DATOS (ESTRUCTURA DEFINITIVA)</div>", unsafe_allow_html=True)
+    st.markdown("<div class='title-bar'>BÓVEDA DE DATOS (ARQUITECTURA CORREGIDA)</div>", unsafe_allow_html=True)
     st.markdown(f"<div class='source-badge'>📁 ARCHIVO: {origen}</div>", unsafe_allow_html=True)
 
-    # ---------------------------------------------------------
-    # CONTROLES DE INMOVILIZACIÓN (FREEZE PANES)
-    # ---------------------------------------------------------
     st.markdown("<h4 style='color: #38bdf8; font-family: Orbitron; font-size: 16px;'>⚙️ CONTROLES DE VISTA</h4>", unsafe_allow_html=True)
-    
     c_freeze, c_num, _ = st.columns([1, 1, 2])
     activar_inmovilizacion = c_freeze.toggle("📌 Inmovilizar Columnas")
     
@@ -190,6 +202,5 @@ def ejecutar(df_base, fuente_activa=None):
     
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Renderizado final con el inmovilizador activado
     tabla_html = generar_tabla_html_piramidal(df_norm, columnas_fijas=columnas_a_congelar)
     st.markdown(tabla_html, unsafe_allow_html=True)
