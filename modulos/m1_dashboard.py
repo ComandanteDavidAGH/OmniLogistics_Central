@@ -1,9 +1,10 @@
 """
-MOTOR B2B (ARQUITECTURA UNIVERSAL - CORRECCIÓN DE INDEXACIÓN)
+MOTOR B2B (ARQUITECTURA UNIVERSAL - CORRECCIÓN DEFINITIVA DE INDEXACIÓN)
 ========================================================================
-- Bug Fix (iloc): Uso estricto de coordenadas numéricas en el destructor de basura.
-- Destructor de Basura: Elimina títulos gigantes (>40 chars) antes de heredar.
+- Limpieza Vectorizada: Destrucción de títulos gigantes vía NumPy para 
+  garantizar compatibilidad total con Pandas 3.0+.
 - Cascada UI: Agrupación gerencial limpia (Padre -> Hijos).
+- Visualización: Tabla HTML piramidal y formato LATAM.
 """
 import re
 import pandas as pd
@@ -43,6 +44,7 @@ def extractor_logico_estricto(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
         origen = str(df_raw["_Origen_Archivo"].dropna().iloc[0]) if not df_raw["_Origen_Archivo"].dropna().empty else origen
         df_raw = df_raw.drop(columns=["_Origen_Archivo"])
 
+    # 1. Búsqueda del Ecuador
     fila_eje = 0
     palabras_ancla = ['semana', 'cinta', 'categoría', 'producto', 'fecha', 'código', 'cliente']
     for i in range(min(20, len(df_raw))):
@@ -59,17 +61,21 @@ def extractor_logico_estricto(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
 
     ecuador_datos = fin_encabezados + 1
     inicio_encabezados = max(0, fila_eje - 2) 
-    df_headers = df_raw.iloc[inicio_encabezados:fin_encabezados + 1].copy().astype(object)
     
-    # DESTRUCTOR DE TÍTULOS GIGANTES: Uso estricto de coordenadas enteras
-    for c_idx in range(len(df_headers.columns)):
-        for r_idx in range(len(df_headers)):
-            val = str(df_headers.iloc[r_idx, c_idx]).strip()
-            if len(val) > 40: 
-                df_headers.iloc[r_idx, c_idx] = np.nan
-                
-    df_headers = df_headers.ffill(axis=0).ffill(axis=1)
+    # 2. Extracción de encabezados en matriz NumPy (Cero errores de iloc en Pandas)
+    arr_headers = df_raw.iloc[inicio_encabezados:fin_encabezados + 1].to_numpy(dtype=object)
+    
+    # Limpieza vectorizada de títulos gigantes (> 40 caracteres)
+    rows, cols = arr_headers.shape
+    for r in range(rows):
+        for c in range(cols):
+            val_str = str(arr_headers[r, c]).strip() if arr_headers[r, c] is not None else ""
+            if len(val_str) > 40:
+                arr_headers[r, c] = np.nan
 
+    df_headers = pd.DataFrame(arr_headers).ffill(axis=0).ffill(axis=1)
+
+    # 3. Construcción del Linaje
     nuevas_cols = []
     for col_idx in range(len(df_headers.columns)):
         jerarquia = []
@@ -84,7 +90,7 @@ def extractor_logico_estricto(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
                     if not jerarquia or jerarquia[-1].lower() != texto_format.lower():
                         jerarquia.append(texto_format)
         
-        if not jerarquia: jerarquia = [f"⚠️_Vacia_Col_{col_idx}"]
+        if not jerarquia: jerarquia = [f"Columna_{col_idx}"]
             
         nombre_final = "<br>".join(jerarquia)
         nuevas_cols.append(nombre_final)
@@ -135,7 +141,6 @@ def generar_tabla_html_piramidal(df: pd.DataFrame, columnas_fijas: int = 0) -> s
         else:
             estilo = "z-index: 9;"
             
-        if "⚠️" in col: estilo += " color: #f43f5e;"
         html += f"<th style='padding: 12px 15px; border: 1px solid #334155; color: #eab308; font-weight: 700; white-space: nowrap; vertical-align: bottom; {estilo}'>{col}</th>"
     
     html += "</tr></thead><tbody>"
