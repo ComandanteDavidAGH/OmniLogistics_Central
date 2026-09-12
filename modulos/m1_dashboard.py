@@ -1,7 +1,7 @@
 """
-MOTOR B2B (ARQUITECTURA UNIVERSAL - CORRECCIÓN DE ANCLAJE Y DASHBOARD)
+MOTOR B2B (ARQUITECTURA UNIVERSAL - CORRECCIÓN DE INDEXACIÓN)
 ========================================================================
-- Bug Fix (Sabiduria): Se erradican palabras clave ambiguas.
+- Bug Fix (iloc): Uso estricto de coordenadas numéricas en el destructor de basura.
 - Destructor de Basura: Elimina títulos gigantes (>40 chars) antes de heredar.
 - Cascada UI: Agrupación gerencial limpia (Padre -> Hijos).
 """
@@ -43,7 +43,6 @@ def extractor_logico_estricto(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
         origen = str(df_raw["_Origen_Archivo"].dropna().iloc[0]) if not df_raw["_Origen_Archivo"].dropna().empty else origen
         df_raw = df_raw.drop(columns=["_Origen_Archivo"])
 
-    # 1. Búsqueda Segura del Ecuador (Adiós al bug "Sabiduria")
     fila_eje = 0
     palabras_ancla = ['semana', 'cinta', 'categoría', 'producto', 'fecha', 'código', 'cliente']
     for i in range(min(20, len(df_raw))):
@@ -52,7 +51,6 @@ def extractor_logico_estricto(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
             fila_eje = i
             break
 
-    # 2. Búsqueda de Años
     fin_encabezados = fila_eje
     if fila_eje + 1 < len(df_raw):
         vals = [str(x).replace('.0','') for x in df_raw.iloc[fila_eje + 1] if pd.notna(x)]
@@ -60,22 +58,18 @@ def extractor_logico_estricto(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
             fin_encabezados = fila_eje + 1
 
     ecuador_datos = fin_encabezados + 1
-
-    # 3. Herencia Estricta (Tomamos 2 filas arriba para agarrar PLANTAS, HECTAREAS)
     inicio_encabezados = max(0, fila_eje - 2) 
     df_headers = df_raw.iloc[inicio_encabezados:fin_encabezados + 1].copy().astype(object)
     
-    # DESTRUCTOR DE TÍTULOS GIGANTES: Asesina la basura antes de que se propague
-    for c in df_headers.columns:
-        for r in range(len(df_headers)):
-            val = str(df_headers.iloc[r, c]).strip()
+    # DESTRUCTOR DE TÍTULOS GIGANTES: Uso estricto de coordenadas enteras
+    for c_idx in range(len(df_headers.columns)):
+        for r_idx in range(len(df_headers)):
+            val = str(df_headers.iloc[r_idx, c_idx]).strip()
             if len(val) > 40: 
-                df_headers.iloc[r, c] = np.nan
+                df_headers.iloc[r_idx, c_idx] = np.nan
                 
-    # Relleno Geométrico (Gravedad primero, luego Barrido)
     df_headers = df_headers.ffill(axis=0).ffill(axis=1)
 
-    # 4. Construcción del Linaje
     nuevas_cols = []
     for col_idx in range(len(df_headers.columns)):
         jerarquia = []
@@ -220,20 +214,16 @@ def ejecutar(df_base, fuente_activa=None):
             
             c1, c2, c3 = st.columns([1, 1.2, 1.2])
             
-            # 1. EJE PRINCIPAL
             eje_x = c1.selectbox("📌 1. Analizar por (Eje X):", options=opciones_eje_x, format_func=ui_nombre_limpio)
             
-            # LÓGICA DE CASCADA (Agrupamiento por Nivel 1)
             niveles_1 = {}
             for col in cols_num:
                 padre = col.split('<br>')[0].replace("&nbsp;", "").strip()
                 if padre not in niveles_1: niveles_1[padre] = []
                 niveles_1[padre].append(col)
                 
-            # 2. SELECTOR DE PADRE (Cascada Nivel 1)
             grupo_sel = c2.selectbox("📂 2. Módulo/Grupo Operativo:", options=list(niveles_1.keys()))
             
-            # 3. FILTRO FANTASMA DE TIEMPO
             df_filtrado = df_norm.copy()
             col_tiempo = next((c for c in df_norm.columns if any(w in c.lower() for w in ['semana', 'fecha', 'mes', 'periodo'])), None)
             
@@ -247,7 +237,6 @@ def ejecutar(df_base, fuente_activa=None):
 
             st.markdown("<br>", unsafe_allow_html=True)
             
-            # 4. SELECTOR EN CASCADA (Métricas limpias sin el nombre del Padre)
             def format_subnivel(col_html):
                 partes = col_html.split('<br>')
                 if len(partes) > 1: return " ➔ ".join(partes[1:]).replace("&nbsp;", "").strip()
