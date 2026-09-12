@@ -1,9 +1,9 @@
 """
-MOTOR B2B (ARQUITECTURA UNIVERSAL - DASHBOARD ELEGANTE Y CASCADA)
+MOTOR B2B (ARQUITECTURA UNIVERSAL - DASHBOARD Y MATRIZ)
 ========================================================================
-- Selección en Cascada: Agrupa jerarquías largas en menús limpios y cortos.
-- Filtro Tiempo Inteligente: Detecta semanas/fechas dinámicamente y aparece solo si existe.
-- Estética: Sencillo pero elegante.
+- 100% Agnóstico: No hay reglas duras para negocios específicos.
+- Dashboard Dinámico: Detecta dimensiones (textos) y métricas (números).
+- KPIs en Tiempo Real: Sumarización automática de las variables elegidas.
 """
 import re
 import pandas as pd
@@ -16,6 +16,7 @@ VALORES_NULOS = {"none", "nan", "nat", "null", "n/a", "#n/a", "-", "--", ""}
 PALETA_CORP = ["#eab308", "#3b82f6", "#10b981", "#6366f1", "#f43f5e", "#8b5cf6"]
 
 def format_latam(valor):
+    """Convierte número a formato LATAM visual (1.234,56)."""
     if pd.isna(valor) or valor == "": return ""
     try:
         v = float(valor)
@@ -25,6 +26,7 @@ def format_latam(valor):
         return str(valor)
 
 def format_kpi(val):
+    """Abreviación gerencial (M/B) para las tarjetas KPI."""
     if pd.isna(val) or val == "": return "0"
     try: v = float(val)
     except: return str(val)
@@ -34,7 +36,7 @@ def format_kpi(val):
     else: return f"{v:,.0f}".replace(",", "§").replace(".", ",").replace("§", ".")
 
 def ui_nombre_limpio(col_html):
-    """Limpia todo el HTML para un título principal."""
+    """Convierte el título piramidal HTML en texto lineal para selectores."""
     texto = str(col_html).replace("<br>", " ➔ ").replace("&nbsp;", "")
     return texto.strip()
 
@@ -47,6 +49,7 @@ def extractor_logico_estricto(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
     fila_eje = 0
     for i in range(min(20, len(df_raw))):
         text_row = " ".join([str(x).lower() for x in df_raw.iloc[i] if pd.notna(x)])
+        # Palabras comunes de cruce, pero aplica para cualquier matriz
         if any(w in text_row for w in ['semana', 'cinta', 'categoría', 'producto', 'fecha', 'código', 'id', 'cliente']):
             fila_eje = i
             break
@@ -62,7 +65,6 @@ def extractor_logico_estricto(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
     inicio_encabezados = max(0, fila_eje - 1) 
     df_headers = df_raw.iloc[inicio_encabezados:fin_encabezados + 1].copy().astype(object)
     
-    # Relleno Geométrico (Gravedad y Barrido)
     df_headers = df_headers.ffill(axis=0).ffill(axis=1)
 
     nuevas_cols = []
@@ -160,10 +162,10 @@ def inyectar_css():
         .main { background-color: #0b1120; }
         .title-bar { color: #eab308; font-family: 'Orbitron', sans-serif; font-size: 22px; font-weight: 800; border-bottom: 1px solid #1e293b; padding-bottom: 12px; margin-bottom: 20px; letter-spacing: 1px; } 
         .source-badge { display: inline-block; background: #1e293b; border: 1px solid #334155; color: #94a3b8; padding: 4px 12px; border-radius: 4px; font-family: 'Rajdhani', sans-serif; font-size: 13px; font-weight: 700; margin-bottom: 18px; }
-        .kpi-card { background: #111827; padding: 18px 15px; border-radius: 8px; border: 1px solid #1f2937; border-top: 3px solid #3b82f6; display: flex; flex-direction: column; justify-content: center; min-height: 100px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.5); }
+        .kpi-card { background: #111827; padding: 18px 15px; border-radius: 8px; border: 1px solid #1f2937; border-top: 3px solid #3b82f6; display: flex; flex-direction: column; justify-content: center; min-height: 100px; margin-bottom: 15px; }
         .kpi-title { font-family: 'Rajdhani', sans-serif; font-size: 13px; color: #9ca3af; font-weight: 700; text-transform: uppercase; line-height: 1.3; } 
         .kpi-val { font-family: 'Orbitron', sans-serif; font-size: 24px; color: #f3f4f6; font-weight: 800; margin-top: 6px; }
-        .chart-box { background: #111827; padding: 20px; border-radius: 10px; border: 1px solid #1f2937; margin-bottom: 25px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+        .chart-box { background: #111827; padding: 20px; border-radius: 10px; border: 1px solid #1f2937; margin-bottom: 25px; }
         .chart-header { background-color: #1e293b; padding: 10px 15px; border-radius: 6px; margin-bottom: 15px; display: inline-block; border-left: 4px solid #eab308; }
         .chart-title { color:#eab308; font-family: 'Orbitron', sans-serif; font-size: 14px; font-weight: 800; letter-spacing: 0.5px; margin: 0; }
     </style>
@@ -173,12 +175,12 @@ def ejecutar(df_base, fuente_activa=None):
     inyectar_css()
 
     if df_base is None or df_base.empty:
-        st.markdown("<div class='title-bar'>CENTRO DE MANDO B2B</div>", unsafe_allow_html=True)
+        st.markdown("<div class='title-bar'>SISTEMA OPERATIVO OMNILOGISTICS</div>", unsafe_allow_html=True)
         st.markdown("""
         <div style='background: #111827; border-left: 4px solid #3b82f6; padding: 40px; border-radius: 8px; margin-top: 20px; text-align: center;'>
             <h2 style='color: #f3f4f6; font-family: Orbitron; margin-bottom: 15px;'>EN ESPERA DE DATOS</h2>
             <p style='color: #9ca3af; font-family: Rajdhani; font-size: 18px; line-height: 1.6;'>
-                Sencillo pero elegante. Sube tu matriz y el sistema construirá los selectores automáticamente.
+                Sube cualquier matriz (Excel/CSV). El sistema detectará las dimensiones automáticamente.
             </p>
         </div>
         """, unsafe_allow_html=True)
@@ -188,79 +190,51 @@ def ejecutar(df_base, fuente_activa=None):
         st.session_state["ultima_fuente"] = fuente_activa
         st.cache_data.clear()
 
-    with st.spinner("Desplegando Arquitectura Universal..."):
+    with st.spinner("Procesando matriz universal..."):
         df_norm, origen = extractor_logico_estricto(df_base)
         if df_norm.empty:
-            st.error("⚠️ El archivo quedó vacío tras la extracción.")
+            st.error("⚠️ El archivo quedó vacío tras la limpieza estructural.")
             st.stop()
 
+        # SEPARACIÓN UNIVERSAL: Categóricas (Textos) vs Numéricas (Métricas)
         cols_num = [c for c in df_norm.columns if pd.api.types.is_numeric_dtype(df_norm[c].dropna())]
         cols_cat = [c for c in df_norm.columns if c not in cols_num]
+        
+        # Cualquier columna categórica puede ser un Eje X, pero priorizamos la primera
         opciones_eje_x = cols_cat if cols_cat else cols_num[:1]
 
     st.markdown("<div class='title-bar'>CENTRO DE MANDO E INTELIGENCIA</div>", unsafe_allow_html=True)
     st.markdown(f"<div class='source-badge'>📁 ARCHIVO ACTIVO: {origen}</div>", unsafe_allow_html=True)
 
-    tab_dash, tab_datos = st.tabs(["🚀 DASHBOARD", "🗄️ BÓVEDA DE DATOS (MATRIZ)"])
+    tab_dash, tab_datos = st.tabs(["🚀 DASHBOARD ANALÍTICO", "🗄️ BÓVEDA DE DATOS (MATRIZ)"])
 
     with tab_dash:
         if not cols_num:
-            st.warning("⚠️ No se detectaron métricas numéricas.")
+            st.warning("⚠️ No se detectaron columnas con valores numéricos para graficar.")
         else:
             st.markdown("<h4 style='color: #38bdf8; font-family: Orbitron; font-size: 16px;'>⚙️ CONSTRUCTOR DEL LIENZO</h4>", unsafe_allow_html=True)
             
-            c1, c2, c3 = st.columns([1, 1.2, 1.2])
+            # FILA DE CONTROLES UNIVERSALES
+            c1, c2 = st.columns([1, 2])
             
-            # 1. EJE PRINCIPAL
-            eje_x = c1.selectbox("📌 1. Analizar por (Eje X):", options=opciones_eje_x, format_func=ui_nombre_limpio)
+            # Eje X (Dimensión)
+            eje_x = c1.selectbox("1. Agrupar datos por (Eje X):", options=opciones_eje_x, format_func=ui_nombre_limpio)
             
-            # LÓGICA DE CASCADA (Agrupamiento por Nivel 1)
-            # Organizamos las columnas numéricas por su "Grupo Padre" (Ej. Plantas, Hectáreas)
-            niveles_1 = {}
-            for col in cols_num:
-                padre = col.split('<br>')[0].replace("&nbsp;", "").strip()
-                if padre not in niveles_1: niveles_1[padre] = []
-                niveles_1[padre].append(col)
-                
-            # 2. SELECTOR DE PADRE (Cascada Nivel 1)
-            grupo_sel = c2.selectbox("📂 2. Módulo/Grupo Operativo:", options=list(niveles_1.keys()))
-            
-            # 3. FILTRO FANTASMA DE TIEMPO (Detecta si hay Semana/Fecha/Mes)
-            df_filtrado = df_norm.copy()
-            col_tiempo = next((c for c in df_norm.columns if any(w in c.lower() for w in ['semana', 'fecha', 'mes', 'periodo'])), None)
-            
-            if col_tiempo:
-                # Extraer números válidos para el slider
-                semanas_validas = [int(float(str(v))) for v in df_filtrado[col_tiempo].dropna() if str(v).replace('.','',1).isdigit()]
-                if semanas_validas:
-                    min_s, max_s = min(semanas_validas), max(semanas_validas)
-                    if min_s < max_s:
-                        rango = c3.slider(f"📅 Rango ({ui_nombre_limpio(col_tiempo)}):", min_s, max_s, (min_s, max_s))
-                        # Filtro real
-                        df_filtrado = df_filtrado[df_filtrado[col_tiempo].apply(lambda x: rango[0] <= int(float(str(x))) <= rango[1] if pd.notna(x) and str(x).replace('.','',1).isdigit() else True)]
+            # Eje Y (Múltiples Métricas)
+            metricas_sel = c2.multiselect("2. Seleccionar Métricas a Visualizar (Eje Y):", options=cols_num, default=[], format_func=ui_nombre_limpio)
 
-            st.markdown("<br>", unsafe_allow_html=True)
-            
-            # 4. SELECTOR EN CASCADA (Métricas limpias sin el nombre del Padre)
-            def format_subnivel(col_html):
-                partes = col_html.split('<br>')
-                if len(partes) > 1: return " ➔ ".join(partes[1:]).replace("&nbsp;", "").strip()
-                return partes[0].replace("&nbsp;", "").strip()
-                
-            opciones_n2 = niveles_1[grupo_sel]
-            metricas_sel = st.multiselect(f"📊 3. Seleccione Métricas de [{grupo_sel}]:", options=opciones_n2, default=[], format_func=format_subnivel)
-            
             st.markdown("<hr style='border-color: #1f2937;'>", unsafe_allow_html=True)
 
             if not metricas_sel:
-                st.info(f"📌 Cascada lista. Seleccione una o más métricas del grupo '{grupo_sel}' para desplegar inteligencia.")
+                st.info("📌 El lienzo está en blanco. Seleccione una o más métricas en el paso 2 para generar los gráficos y KPIs.")
             else:
-                # KPIS DINÁMICOS
+                # ---------------------------------------------------------
+                # RENDERIZADO DE KPIs DINÁMICOS
+                # ---------------------------------------------------------
                 kpi_cols = st.columns(min(len(metricas_sel), 4))
-                for i, m_col in enumerate(metricas_sel[:4]): 
-                    total_val = df_filtrado[m_col].sum()
-                    # Muestra el nombre jerárquico bonito en el KPI
-                    nombre_kpi = format_subnivel(m_col)
+                for i, m_col in enumerate(metricas_sel[:4]): # Máximo 4 KPIs en la primera fila
+                    total_val = df_norm[m_col].sum()
+                    nombre_kpi = ui_nombre_limpio(m_col)
                     formato_val = format_kpi(total_val)
                     with kpi_cols[i]:
                         st.markdown(f"""
@@ -270,15 +244,15 @@ def ejecutar(df_base, fuente_activa=None):
                         </div>
                         """, unsafe_allow_html=True)
 
-                st.markdown("<br>", unsafe_allow_html=True)
-
-                # GRÁFICOS
+                # ---------------------------------------------------------
+                # RENDERIZADO DE GRÁFICOS DINÁMICOS
+                # ---------------------------------------------------------
                 for i in range(0, len(metricas_sel), 2):
                     grid = st.columns(2)
                     for j in range(2):
                         if i + j < len(metricas_sel):
                             m_col = metricas_sel[i+j]
-                            alias = format_subnivel(m_col)
+                            alias = ui_nombre_limpio(m_col)
                             
                             with grid[j]:
                                 st.markdown("<div class='chart-box'>", unsafe_allow_html=True)
@@ -287,7 +261,9 @@ def ejecutar(df_base, fuente_activa=None):
                                 
                                 tipo_grafico = c_tipo.selectbox("Tipo:", ["Barras", "Líneas", "Área", "Dona"], key=f"g_{m_col}", label_visibility="collapsed")
                                 
-                                df_g = df_filtrado.groupby(eje_x)[m_col].sum().reset_index(name='Valor')
+                                # Agrupación universal de datos
+                                df_g = df_norm.groupby(eje_x)[m_col].sum().reset_index(name='Valor')
+                                # Asegurar que el Eje X se ordene lógicamente si son números camuflados de texto (Ej. Semanas 1, 2, 3...)
                                 df_g['Orden'] = df_g[eje_x].apply(lambda x: float(x) if str(x).replace('.','').isdigit() else str(x))
                                 df_g = df_g.sort_values('Orden').drop(columns=['Orden'])
 
@@ -324,5 +300,6 @@ def ejecutar(df_base, fuente_activa=None):
             columnas_a_congelar = c_num.selectbox("Cantidad a fijar:", range(1, 6), label_visibility="collapsed")
         
         st.markdown("<br>", unsafe_allow_html=True)
+
         tabla_html = generar_tabla_html_piramidal(df_norm, columnas_fijas=columnas_a_congelar)
         st.markdown(tabla_html, unsafe_allow_html=True)
