@@ -1,175 +1,143 @@
 """
-MOTOR B2B (ARQUITECTURA UNIVERSAL - CORRECCIÓN DEFINITIVA DE INDEXACIÓN)
-========================================================================
-- Limpieza Vectorizada: Destrucción de títulos gigantes vía NumPy para 
-  garantizar compatibilidad total con Pandas 3.0+.
-- Cascada UI: Agrupación gerencial limpia (Padre -> Hijos).
-- Visualización: Tabla HTML piramidal y formato LATAM.
+MOTOR DE NEGOCIO (LECTURA PLANA UNIVERSAL)
+===========================================
+- Ya NO asume encabezados piramidales/jerárquicos de varias filas.
+- Toma la fila 1 del archivo como encabezado (como cualquier Excel normal
+  de un hotel, restaurante o negocio pequeño) y limpia la matriz.
+- Elimina filas/columnas vacías, homogeniza texto, detecta columnas
+  numéricas (soporta $, %, comas) y elimina duplicados automáticamente.
+- Permite crear "Campos Calculados" (fórmulas) entre columnas.
 """
 import re
 import pandas as pd
 import numpy as np
 import streamlit as st
 import plotly.express as px
-from typing import Tuple
 
 VALORES_NULOS = {"none", "nan", "nat", "null", "n/a", "#n/a", "-", "--", ""}
 PALETA_CORP = ["#eab308", "#3b82f6", "#10b981", "#6366f1", "#f43f5e", "#8b5cf6"]
 
+
 def format_latam(valor):
-    if pd.isna(valor) or valor == "": return ""
+    if pd.isna(valor) or valor == "":
+        return ""
     try:
         v = float(valor)
-        if v.is_integer(): return f"{int(v):,}".replace(",", ".")
-        else: return f"{v:,.2f}".replace(",", "§").replace(".", ",").replace("§", ".")
+        if v.is_integer():
+            return f"{int(v):,}".replace(",", ".")
+        else:
+            return f"{v:,.2f}".replace(",", "§").replace(".", ",").replace("§", ".")
     except Exception:
         return str(valor)
 
+
 def format_kpi(val):
-    if pd.isna(val) or val == "": return "0"
-    try: v = float(val)
-    except: return str(val)
+    if pd.isna(val) or val == "":
+        return "0"
+    try:
+        v = float(val)
+    except Exception:
+        return str(val)
 
-    if abs(v) >= 1_000_000_000: return f"{v/1_000_000_000:,.2f} B".replace(",", "§").replace(".", ",").replace("§", ".")
-    elif abs(v) >= 1_000_000: return f"{v/1_000_000:,.2f} M".replace(",", "§").replace(".", ",").replace("§", ".")
-    else: return f"{v:,.0f}".replace(",", "§").replace(".", ",").replace("§", ".")
+    if abs(v) >= 1_000_000_000:
+        return f"{v/1_000_000_000:,.2f} B".replace(",", "§").replace(".", ",").replace("§", ".")
+    elif abs(v) >= 1_000_000:
+        return f"{v/1_000_000:,.2f} M".replace(",", "§").replace(".", ",").replace("§", ".")
+    else:
+        return f"{v:,.0f}".replace(",", "§").replace(".", ",").replace("§", ".")
 
-def ui_nombre_limpio(col_html):
-    texto = str(col_html).replace("<br>", " ➔ ").replace("&nbsp;", "")
-    return texto.strip()
 
-def extractor_logico_estricto(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
+def limpiar_datos_planos(df_raw: pd.DataFrame, eliminar_duplicados: bool = True):
+    """Lectura y limpieza PLANA (sin jerarquías). Devuelve (df_limpio, origen, stats)."""
+    df = df_raw.copy()
     origen = "Archivo Base"
-    if "_Origen_Archivo" in df_raw.columns:
-        origen = str(df_raw["_Origen_Archivo"].dropna().iloc[0]) if not df_raw["_Origen_Archivo"].dropna().empty else origen
-        df_raw = df_raw.drop(columns=["_Origen_Archivo"])
+    if "_Origen_Archivo" in df.columns:
+        no_nulos = df["_Origen_Archivo"].dropna()
+        origen = str(no_nulos.iloc[0]) if not no_nulos.empty else origen
+        df = df.drop(columns=["_Origen_Archivo"])
 
-    # 1. Búsqueda del Ecuador
-    fila_eje = 0
-    palabras_ancla = ['semana', 'cinta', 'categoría', 'producto', 'fecha', 'código', 'cliente']
-    for i in range(min(20, len(df_raw))):
-        text_row = " ".join([str(x).lower() for x in df_raw.iloc[i] if pd.notna(x)])
-        if any(w in text_row for w in palabras_ancla):
-            fila_eje = i
-            break
+    filas_originales = len(df)
 
-    fin_encabezados = fila_eje
-    if fila_eje + 1 < len(df_raw):
-        vals = [str(x).replace('.0','') for x in df_raw.iloc[fila_eje + 1] if pd.notna(x)]
-        if sum(1 for x in vals if x.isdigit() and len(x) == 4) >= 2:
-            fin_encabezados = fila_eje + 1
+    # 1. Quitar filas/columnas 100% vacías
+    df = df.dropna(how="all", axis=0).dropna(how="all", axis=1)
 
-    ecuador_datos = fin_encabezados + 1
-    inicio_encabezados = max(0, fila_eje - 2) 
-    
-    # 2. Extracción de encabezados en matriz NumPy (Cero errores de iloc en Pandas)
-    arr_headers = df_raw.iloc[inicio_encabezados:fin_encabezados + 1].to_numpy(dtype=object)
-    
-    # Limpieza vectorizada de títulos gigantes (> 40 caracteres)
-    rows, cols = arr_headers.shape
-    for r in range(rows):
-        for c in range(cols):
-            val_str = str(arr_headers[r, c]).strip() if arr_headers[r, c] is not None else ""
-            if len(val_str) > 40:
-                arr_headers[r, c] = np.nan
-
-    df_headers = pd.DataFrame(arr_headers).ffill(axis=0).ffill(axis=1)
-
-    # 3. Construcción del Linaje
+    # 2. Limpiar nombres de columnas (encabezado = fila 1, formato plano)
     nuevas_cols = []
-    for col_idx in range(len(df_headers.columns)):
-        jerarquia = []
-        for f_idx in range(len(df_headers)):
-            val = df_headers.iloc[f_idx, col_idx]
-            if pd.notna(val) and str(val).strip() != "" and str(val).lower() != 'nan':
-                texto = str(val).replace('.0', '').strip()
-                texto = re.sub(r'\b20\d{2}(?:\s*-\s*20\d{2})+\b', '', texto).strip('- ')
-                
-                texto_format = " ".join(texto.split()).title() if not texto.isdigit() else " ".join(texto.split())
-                if texto_format:
-                    if not jerarquia or jerarquia[-1].lower() != texto_format.lower():
-                        jerarquia.append(texto_format)
-        
-        if not jerarquia: jerarquia = [f"Columna_{col_idx}"]
-            
-        nombre_final = "<br>".join(jerarquia)
-        nuevas_cols.append(nombre_final)
-
-    df_datos = df_raw.iloc[ecuador_datos:].copy()
-    
-    cols_unicas, conteo = [], {}
-    for col in nuevas_cols:
-        if col in conteo:
-            conteo[col] += 1
-            cols_unicas.append(f"{col}{'&nbsp;' * conteo[col]}")
+    conteo = {}
+    for i, col in enumerate(df.columns):
+        nombre = str(col).strip()
+        if nombre == "" or nombre.lower().startswith("unnamed"):
+            nombre = f"Columna_{i + 1}"
+        nombre = " ".join(nombre.split())
+        if nombre in conteo:
+            conteo[nombre] += 1
+            nombre = f"{nombre} ({conteo[nombre]})"
         else:
-            conteo[col] = 0
-            cols_unicas.append(col)
-            
-    df_datos.columns = cols_unicas
-    
-    mask = pd.Series([True] * len(df_datos), index=df_datos.index)
-    if not df_datos.empty and len(df_datos.columns) > 0:
-        for col in df_datos.columns[:3]:
-            if df_datos[col].dtype == 'object':
-                filtro = df_datos[col].astype(str).str.lower().str.contains(r'total|promedio|acumulado|año\b|ano\b|sem\b|sem\d', regex=True, na=False)
-                mask = mask & (~filtro)
-                
-    df_datos = df_datos[mask].reset_index(drop=True).dropna(how='all', axis=0)
+            conteo[nombre] = 0
+        nuevas_cols.append(nombre)
+    df.columns = nuevas_cols
 
-    for col in df_datos.columns:
-        df_datos[col] = df_datos[col].map(lambda v: np.nan if str(v).lower().strip() in VALORES_NULOS else v)
-        serie_str = df_datos[col].dropna().astype(str).str.replace(r"[$\s%]", "", regex=True).str.replace(",", ".")
-        num = pd.to_numeric(serie_str, errors="coerce")
-        if num.notna().sum() / max(len(serie_str), 1) > 0.5: df_datos[col] = num
+    # 3. Limpiar texto y valores nulos disfrazados ("N/A", "-", etc.)
+    for col in df.columns:
+        if df[col].dtype == "object":
+            df[col] = df[col].map(lambda v: v.strip() if isinstance(v, str) else v)
+            df[col] = df[col].map(lambda v: np.nan if str(v).strip().lower() in VALORES_NULOS else v)
 
-    return df_datos, origen
+    # 4. Detectar y convertir columnas numéricas (soporta $, %, espacios y comas)
+    for col in df.columns:
+        if df[col].dtype == "object":
+            serie_str = df[col].dropna().astype(str).str.replace(r"[$\s%]", "", regex=True).str.replace(",", ".")
+            num = pd.to_numeric(serie_str, errors="coerce")
+            if len(serie_str) > 0 and num.notna().sum() / len(serie_str) > 0.5:
+                df[col] = pd.to_numeric(df[col].astype(str).str.replace(r"[$\s%]", "", regex=True).str.replace(",", "."), errors="coerce")
 
-def generar_tabla_html_piramidal(df: pd.DataFrame, columnas_fijas: int = 0) -> str:
+    # 5. Deduplicar
+    duplicados_eliminados = 0
+    if eliminar_duplicados:
+        filas_pre = len(df)
+        df = df.drop_duplicates()
+        duplicados_eliminados = filas_pre - len(df)
+
+    df = df.reset_index(drop=True)
+    stats = {
+        "filas_originales": filas_originales,
+        "filas_finales": len(df),
+        "duplicados_eliminados": duplicados_eliminados,
+    }
+    return df, origen, stats
+
+
+def generar_tabla_html(df: pd.DataFrame) -> str:
     html = """
-    <div style="overflow: auto; max-height: 60vh; border: 1px solid #1f2937; border-radius: 8px; margin-bottom: 20px; position: relative;">
+    <div style="overflow: auto; max-height: 60vh; border: 1px solid #1f2937; border-radius: 8px; margin-bottom: 20px;">
         <table style="width: 100%; border-collapse: collapse; font-family: 'Rajdhani', sans-serif; background-color: #0b1120; color: #f3f4f6; text-align: center; font-size: 14px;">
             <thead style="background-color: #1e293b; position: sticky; top: 0; z-index: 10;">
                 <tr>
     """
-    ancho_fijo = 120 
-    for i, col in enumerate(df.columns):
-        if i < columnas_fijas:
-            left_pos = i * ancho_fijo
-            sombra = "box-shadow: 3px 0 5px -2px rgba(0,0,0,0.6);" if i == columnas_fijas - 1 else ""
-            estilo = f"position: sticky; left: {left_pos}px; min-width: {ancho_fijo}px; max-width: {ancho_fijo}px; background-color: #1e293b; z-index: 11; {sombra}"
-        else:
-            estilo = "z-index: 9;"
-            
-        html += f"<th style='padding: 12px 15px; border: 1px solid #334155; color: #eab308; font-weight: 700; white-space: nowrap; vertical-align: bottom; {estilo}'>{col}</th>"
-    
+    for col in df.columns:
+        html += f"<th style='padding: 12px 15px; border: 1px solid #334155; color: #eab308; font-weight: 700; white-space: nowrap;'>{col}</th>"
     html += "</tr></thead><tbody>"
     for _, row in df.iterrows():
         html += "<tr style='border-bottom: 1px solid #1f2937;'>"
-        for i, col in enumerate(df.columns):
+        for col in df.columns:
             val = row[col]
             val_str = "" if pd.isna(val) or val == "" else (format_latam(val) if isinstance(val, (int, float)) else str(val))
-            
-            if i < columnas_fijas:
-                left_pos = i * ancho_fijo
-                sombra = "box-shadow: 3px 0 5px -2px rgba(0,0,0,0.6);" if i == columnas_fijas - 1 else ""
-                estilo = f"position: sticky; left: {left_pos}px; min-width: {ancho_fijo}px; max-width: {ancho_fijo}px; background-color: #0f172a; font-weight: 600; color: #38bdf8; z-index: 5; {sombra}"
-            else:
-                estilo = ""
-            html += f"<td style='padding: 10px 15px; border-right: 1px solid #1f2937; white-space: nowrap; {estilo}'>{val_str}</td>"
+            html += f"<td style='padding: 10px 15px; border-right: 1px solid #1f2937; white-space: nowrap;'>{val_str}</td>"
         html += "</tr>"
     html += "</tbody></table></div>"
     return html
+
 
 def inyectar_css():
     st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;800;900&family=Rajdhani:wght@500;600;700&display=swap');
         .main { background-color: #0b1120; }
-        .title-bar { color: #eab308; font-family: 'Orbitron', sans-serif; font-size: 22px; font-weight: 800; border-bottom: 1px solid #1e293b; padding-bottom: 12px; margin-bottom: 20px; letter-spacing: 1px; } 
-        .source-badge { display: inline-block; background: #1e293b; border: 1px solid #334155; color: #94a3b8; padding: 4px 12px; border-radius: 4px; font-family: 'Rajdhani', sans-serif; font-size: 13px; font-weight: 700; margin-bottom: 18px; }
+        .title-bar { color: #eab308; font-family: 'Orbitron', sans-serif; font-size: 22px; font-weight: 800; border-bottom: 1px solid #1e293b; padding-bottom: 12px; margin-bottom: 20px; letter-spacing: 1px; }
+        .source-badge { display: inline-block; background: #1e293b; border: 1px solid #334155; color: #94a3b8; padding: 4px 12px; border-radius: 4px; font-family: 'Rajdhani', sans-serif; font-size: 13px; font-weight: 700; margin-bottom: 10px; }
+        .stat-badge { display: inline-block; background: #111827; border: 1px solid #1f2937; color: #34d399; padding: 4px 12px; border-radius: 4px; font-family: 'Rajdhani', sans-serif; font-size: 13px; font-weight: 700; margin-bottom: 18px; margin-left: 8px; }
         .kpi-card { background: #111827; padding: 18px 15px; border-radius: 8px; border: 1px solid #1f2937; border-top: 3px solid #3b82f6; display: flex; flex-direction: column; justify-content: center; min-height: 100px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.5); }
-        .kpi-title { font-family: 'Rajdhani', sans-serif; font-size: 13px; color: #9ca3af; font-weight: 700; text-transform: uppercase; line-height: 1.3; } 
+        .kpi-title { font-family: 'Rajdhani', sans-serif; font-size: 13px; color: #9ca3af; font-weight: 700; text-transform: uppercase; line-height: 1.3; }
         .kpi-val { font-family: 'Orbitron', sans-serif; font-size: 24px; color: #f3f4f6; font-weight: 800; margin-top: 6px; }
         .chart-box { background: #111827; padding: 20px; border-radius: 10px; border: 1px solid #1f2937; margin-bottom: 25px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
         .chart-header { background-color: #1e293b; padding: 10px 15px; border-radius: 6px; margin-bottom: 15px; display: inline-block; border-left: 4px solid #eab308; }
@@ -177,94 +145,122 @@ def inyectar_css():
     </style>
     """, unsafe_allow_html=True)
 
+
+def _aplicar_campos_calculados(df: pd.DataFrame, formulas: list) -> pd.DataFrame:
+    df = df.copy()
+    for f in formulas:
+        try:
+            col1 = df[f["col1"]].astype(float)
+            if f["modo"] == "columna":
+                col2 = df[f["col2"]].astype(float)
+            else:
+                col2 = float(f["valor"])
+
+            if f["op"] == "+":
+                df[f["nombre"]] = col1 + col2
+            elif f["op"] == "-":
+                df[f["nombre"]] = col1 - col2
+            elif f["op"] == "×":
+                df[f["nombre"]] = col1 * col2
+            elif f["op"] == "÷":
+                df[f["nombre"]] = col1 / col2.replace(0, np.nan) if hasattr(col2, "replace") else (col1 / col2 if col2 != 0 else np.nan)
+            elif f["op"] == "% de":
+                df[f["nombre"]] = col1 * (col2 / 100.0)
+        except Exception:
+            pass
+    return df
+
+
 def ejecutar(df_base, fuente_activa=None):
     inyectar_css()
 
     if df_base is None or df_base.empty:
-        st.markdown("<div class='title-bar'>CENTRO DE MANDO OMNILOGISTICS</div>", unsafe_allow_html=True)
+        st.markdown("<div class='title-bar'>CENTRO DE MANDO</div>", unsafe_allow_html=True)
         st.markdown("""
         <div style='background: #111827; border-left: 4px solid #3b82f6; padding: 40px; border-radius: 8px; margin-top: 20px; text-align: center;'>
             <h2 style='color: #f3f4f6; font-family: Orbitron; margin-bottom: 15px;'>EN ESPERA DE DATOS</h2>
             <p style='color: #9ca3af; font-family: Rajdhani; font-size: 18px; line-height: 1.6;'>
-                Sencillo pero elegante. Sube tu matriz y el sistema construirá los selectores automáticamente.
+                Sube tu Excel o CSV (ventas de un restaurante, reservas de un hotel, inventario, etc.)
+                y el sistema construirá los selectores automáticamente.
             </p>
         </div>
         """, unsafe_allow_html=True)
         return
 
-    if "ultima_fuente" not in st.session_state or st.session_state["ultima_fuente"] != fuente_activa:
-        st.session_state["ultima_fuente"] = fuente_activa
-        st.cache_data.clear()
+    clave_fuente = f"{fuente_activa}_{len(df_base)}"
+    if "ultima_fuente_dash" not in st.session_state or st.session_state["ultima_fuente_dash"] != clave_fuente:
+        st.session_state["ultima_fuente_dash"] = clave_fuente
+        st.session_state.setdefault("formulas_por_fuente", {})
 
-    with st.spinner("Desplegando Arquitectura Universal..."):
-        df_norm, origen = extractor_logico_estricto(df_base)
+    c_opt1, c_opt2 = st.columns([1, 3])
+    eliminar_dup = c_opt1.toggle("🧹 Auto-eliminar duplicados", value=True)
+
+    with st.spinner("Procesando datos..."):
+        df_norm, origen, stats = limpiar_datos_planos(df_base, eliminar_duplicados=eliminar_dup)
         if df_norm.empty:
-            st.error("⚠️ El archivo quedó vacío tras la extracción.")
+            st.error("⚠️ El archivo quedó vacío tras la limpieza. Revisa que tenga encabezados en la primera fila.")
             st.stop()
 
-        cols_num = [c for c in df_norm.columns if pd.api.types.is_numeric_dtype(df_norm[c].dropna())]
-        cols_cat = [c for c in df_norm.columns if c not in cols_num]
-        opciones_eje_x = cols_cat if cols_cat else cols_num[:1]
+    # --- Campos calculados (fórmulas) persistentes por fuente ---
+    formulas_dict = st.session_state.setdefault("formulas_por_fuente", {})
+    formulas = formulas_dict.setdefault(origen, [])
+    df_norm = _aplicar_campos_calculados(df_norm, formulas)
+
+    cols_num = [c for c in df_norm.columns if pd.api.types.is_numeric_dtype(df_norm[c])]
+    cols_cat = [c for c in df_norm.columns if c not in cols_num]
+    opciones_eje_x = cols_cat if cols_cat else cols_num[:1]
 
     st.markdown("<div class='title-bar'>CENTRO DE MANDO E INTELIGENCIA</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='source-badge'>📁 ARCHIVO ACTIVO: {origen}</div>", unsafe_allow_html=True)
+    st.markdown(
+        f"<div class='source-badge'>📁 ARCHIVO ACTIVO: {origen}</div>"
+        f"<div class='stat-badge'>🗑️ {stats['duplicados_eliminados']} duplicados eliminados · {stats['filas_finales']} filas finales</div>",
+        unsafe_allow_html=True,
+    )
 
-    tab_dash, tab_datos = st.tabs(["🚀 DASHBOARD", "🗄️ BÓVEDA DE DATOS (MATRIZ)"])
+    tab_dash, tab_formulas, tab_datos = st.tabs(["🚀 DASHBOARD", "➕ CAMPOS CALCULADOS", "🗄️ MATRIZ DE DATOS"])
 
     with tab_dash:
         if not cols_num:
-            st.warning("⚠️ No se detectaron métricas numéricas.")
+            st.warning("⚠️ No se detectaron columnas numéricas para graficar. Ve a '➕ Campos Calculados' o revisa tu archivo.")
         else:
             st.markdown("<h4 style='color: #38bdf8; font-family: Orbitron; font-size: 16px;'>⚙️ CONSTRUCTOR DEL LIENZO</h4>", unsafe_allow_html=True)
-            
-            c1, c2, c3 = st.columns([1, 1.2, 1.2])
-            
-            eje_x = c1.selectbox("📌 1. Analizar por (Eje X):", options=opciones_eje_x, format_func=ui_nombre_limpio)
-            
-            niveles_1 = {}
-            for col in cols_num:
-                padre = col.split('<br>')[0].replace("&nbsp;", "").strip()
-                if padre not in niveles_1: niveles_1[padre] = []
-                niveles_1[padre].append(col)
-                
-            grupo_sel = c2.selectbox("📂 2. Módulo/Grupo Operativo:", options=list(niveles_1.keys()))
-            
-            df_filtrado = df_norm.copy()
-            col_tiempo = next((c for c in df_norm.columns if any(w in c.lower() for w in ['semana', 'fecha', 'mes', 'periodo'])), None)
-            
-            if col_tiempo:
-                semanas_validas = [int(float(str(v))) for v in df_filtrado[col_tiempo].dropna() if str(v).replace('.','',1).isdigit()]
-                if semanas_validas:
-                    min_s, max_s = min(semanas_validas), max(semanas_validas)
-                    if min_s < max_s:
-                        rango = c3.slider(f"📅 Rango de Análisis:", min_s, max_s, (min_s, max_s))
-                        df_filtrado = df_filtrado[df_filtrado[col_tiempo].apply(lambda x: rango[0] <= int(float(str(x))) <= rango[1] if pd.notna(x) and str(x).replace('.','',1).isdigit() else True)]
 
-            st.markdown("<br>", unsafe_allow_html=True)
-            
-            def format_subnivel(col_html):
-                partes = col_html.split('<br>')
-                if len(partes) > 1: return " ➔ ".join(partes[1:]).replace("&nbsp;", "").strip()
-                return partes[0].replace("&nbsp;", "").strip()
-                
-            opciones_n2 = niveles_1[grupo_sel]
-            metricas_sel = st.multiselect(f"📊 3. Seleccione las métricas de [{grupo_sel}]:", options=opciones_n2, default=[], format_func=format_subnivel)
-            
+            c1, c2 = st.columns([1, 1.4])
+            eje_x = c1.selectbox("📌 1. Analizar por (Eje X):", options=opciones_eje_x)
+
+            df_filtrado = df_norm.copy()
+            col_tiempo = next((c for c in df_norm.columns if any(w in c.lower() for w in ['fecha', 'date', 'mes', 'periodo', 'semana', 'dia', 'día'])), None)
+
+            if col_tiempo is not None:
+                serie_fecha = pd.to_datetime(df_filtrado[col_tiempo], errors="coerce")
+                if serie_fecha.notna().sum() / max(len(serie_fecha), 1) > 0.5:
+                    min_f, max_f = serie_fecha.min(), serie_fecha.max()
+                    if pd.notna(min_f) and pd.notna(max_f) and min_f < max_f:
+                        rango = c2.date_input("📅 Rango de fechas:", value=(min_f.date(), max_f.date()))
+                        if isinstance(rango, tuple) and len(rango) == 2:
+                            mask = (serie_fecha.dt.date >= rango[0]) & (serie_fecha.dt.date <= rango[1])
+                            df_filtrado = df_filtrado[mask.fillna(False)]
+                elif pd.api.types.is_numeric_dtype(df_filtrado[col_tiempo]):
+                    valores = df_filtrado[col_tiempo].dropna()
+                    if not valores.empty and valores.min() < valores.max():
+                        rango = c2.slider("📅 Rango de análisis:", float(valores.min()), float(valores.max()), (float(valores.min()), float(valores.max())))
+                        df_filtrado = df_filtrado[df_filtrado[col_tiempo].between(rango[0], rango[1])]
+
+            metricas_sel = st.multiselect("📊 2. Selecciona las métricas a visualizar:", options=cols_num, default=cols_num[:2])
+
             st.markdown("<hr style='border-color: #1f2937;'>", unsafe_allow_html=True)
 
             if not metricas_sel:
-                st.info(f"📌 Cascada lista. Seleccione una o más métricas del grupo '{grupo_sel}' para desplegar inteligencia.")
+                st.info("📌 Selecciona una o más métricas para desplegar el análisis.")
             else:
                 kpi_cols = st.columns(min(len(metricas_sel), 4))
-                for i, m_col in enumerate(metricas_sel[:4]): 
+                for i, m_col in enumerate(metricas_sel[:4]):
                     total_val = df_filtrado[m_col].sum()
-                    nombre_kpi = format_subnivel(m_col)
-                    formato_val = format_kpi(total_val)
                     with kpi_cols[i]:
                         st.markdown(f"""
                         <div class='kpi-card'>
-                            <div class='kpi-title'>{nombre_kpi}</div>
-                            <div class='kpi-val'>{formato_val}</div>
+                            <div class='kpi-title'>{m_col}</div>
+                            <div class='kpi-val'>{format_kpi(total_val)}</div>
                         </div>
                         """, unsafe_allow_html=True)
 
@@ -274,18 +270,16 @@ def ejecutar(df_base, fuente_activa=None):
                     grid = st.columns(2)
                     for j in range(2):
                         if i + j < len(metricas_sel):
-                            m_col = metricas_sel[i+j]
-                            alias = format_subnivel(m_col)
-                            
+                            m_col = metricas_sel[i + j]
+
                             with grid[j]:
                                 st.markdown("<div class='chart-box'>", unsafe_allow_html=True)
                                 c_hdr, c_tipo = st.columns([1.5, 1.0])
-                                c_hdr.markdown(f"<div class='chart-header'><p class='chart-title'>{alias.upper()}</p></div>", unsafe_allow_html=True)
-                                
+                                c_hdr.markdown(f"<div class='chart-header'><p class='chart-title'>{m_col.upper()}</p></div>", unsafe_allow_html=True)
                                 tipo_grafico = c_tipo.selectbox("Tipo:", ["Barras", "Líneas", "Área", "Dona"], key=f"g_{m_col}", label_visibility="collapsed")
-                                
+
                                 df_g = df_filtrado.groupby(eje_x)[m_col].sum().reset_index(name='Valor')
-                                df_g['Orden'] = df_g[eje_x].apply(lambda x: float(x) if str(x).replace('.','').isdigit() else str(x))
+                                df_g['Orden'] = df_g[eje_x].apply(lambda x: float(x) if str(x).replace('.', '', 1).isdigit() else str(x))
                                 df_g = df_g.sort_values('Orden').drop(columns=['Orden'])
 
                                 if tipo_grafico == "Dona":
@@ -307,19 +301,55 @@ def ejecutar(df_base, fuente_activa=None):
                                     yaxis=dict(title=dict(text="", font=dict(color='#94a3b8')), tickfont=dict(color='#9ca3af'), showgrid=True, gridcolor='#1f2937'),
                                     coloraxis_showscale=False, margin=dict(l=10, r=10, t=20, b=30), height=350
                                 )
-
                                 st.plotly_chart(fig, use_container_width=True)
                                 st.markdown("</div>", unsafe_allow_html=True)
 
+    with tab_formulas:
+        st.markdown("<h4 style='color: #38bdf8; font-family: Orbitron; font-size: 16px;'>➕ CREAR CAMPO CALCULADO</h4>", unsafe_allow_html=True)
+        st.caption("Ejemplos: Utilidad = Ingreso - Costo · Precio con IVA = Precio × 1.19 · Comisión = Venta × 0.10")
+
+        if not cols_num:
+            st.info("No hay columnas numéricas todavía para crear fórmulas.")
+        else:
+            fc1, fc2, fc3, fc4 = st.columns([1.2, 0.8, 1.2, 1])
+            col1_sel = fc1.selectbox("Columna A:", options=cols_num, key="f_col1")
+            op_sel = fc2.selectbox("Operación:", ["+", "-", "×", "÷", "% de"], key="f_op")
+            modo = fc3.radio("Con:", ["Columna", "Valor fijo"], horizontal=True, key="f_modo")
+
+            if modo == "Columna":
+                col2_sel = fc3.selectbox("Columna B:", options=[c for c in cols_num if c != col1_sel] or cols_num, key="f_col2")
+                valor_fijo = None
+            else:
+                valor_fijo = fc3.number_input("Valor:", value=1.0, key="f_valor")
+                col2_sel = None
+
+            nombre_sugerido = f"{col1_sel} {op_sel} {col2_sel if col2_sel else valor_fijo}"
+            nombre_campo = fc4.text_input("Nombre del campo:", value=nombre_sugerido, key="f_nombre")
+
+            if st.button("✅ Agregar campo calculado", type="primary"):
+                nueva_formula = {
+                    "nombre": nombre_campo.strip() or nombre_sugerido,
+                    "col1": col1_sel,
+                    "op": op_sel,
+                    "modo": "columna" if modo == "Columna" else "valor",
+                    "col2": col2_sel,
+                    "valor": valor_fijo,
+                }
+                formulas.append(nueva_formula)
+                st.success(f"Campo '{nueva_formula['nombre']}' agregado.")
+                st.rerun()
+
+        if formulas:
+            st.markdown("<hr style='border-color: #1f2937;'>", unsafe_allow_html=True)
+            st.markdown("**Campos calculados activos:**")
+            for idx, f in enumerate(formulas):
+                detalle = f"{f['col1']} {f['op']} {f['col2'] if f['modo'] == 'columna' else f['valor']}"
+                c_a, c_b = st.columns([4, 1])
+                c_a.write(f"🔹 **{f['nombre']}** = {detalle}")
+                if c_b.button("🗑️ Quitar", key=f"del_form_{idx}"):
+                    formulas.pop(idx)
+                    st.rerun()
+
     with tab_datos:
-        st.markdown("<h4 style='color: #38bdf8; font-family: Orbitron; font-size: 16px;'>⚙️ CONTROLES DE VISTA</h4>", unsafe_allow_html=True)
-        c_freeze, c_num, _ = st.columns([1, 1, 2])
-        activar_inmovilizacion = c_freeze.toggle("📌 Inmovilizar Columnas")
-        
-        columnas_a_congelar = 0
-        if activar_inmovilizacion:
-            columnas_a_congelar = c_num.selectbox("Cantidad a fijar:", range(1, 6), label_visibility="collapsed")
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-        tabla_html = generar_tabla_html_piramidal(df_norm, columnas_fijas=columnas_a_congelar)
-        st.markdown(tabla_html, unsafe_allow_html=True)
+        st.markdown("<h4 style='color: #38bdf8; font-family: Orbitron; font-size: 16px;'>🗄️ MATRIZ PLANA</h4>", unsafe_allow_html=True)
+        st.markdown(generar_tabla_html(df_norm), unsafe_allow_html=True)
